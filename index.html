@@ -150,97 +150,150 @@
 
   <!-- LOGIC SCRIPT -->
   <script>
-    // Initialize Icons
     lucide.createIcons();
 
-    // 1. IndexedDB Database Initialization
-    const db = new Dexie('HypeFeedDB');
-    db.version(1).stores({
-      posts: 'id, pubkey, mediaUrl, timestamp',
-      user: 'key, value'
-    });
+    // 1. Nostr Relays (Atviri P2P tinklo mazgai)
+    const RELAYS = [
+      'wss://relay.damus.io',
+      'wss://nos.lol',
+      'wss://relay.nostr.band'
+    ];
 
-    // 2. Identity & Keys Setup (Zero Onboarding)
+    let postsMap = new Map();
     let userKeys = { pk: '', pub: '' };
 
-    async function initIdentity() {
+    // 2. Automatinis raktų sugeneravimas (Zero Onboarding)
+    function initIdentity() {
       let savedPk = localStorage.getItem('hype_priv_key');
       if (!savedPk) {
-        // Generate new random Nostr key if NostrTools is loaded
         if (window.NostrTools) {
           savedPk = NostrTools.generatePrivateKey();
-          localStorage.setItem('hype_priv_key', savedPk);
         } else {
           savedPk = 'demo_key_' + Math.random().toString(36).substring(2);
         }
+        localStorage.setItem('hype_priv_key', savedPk);
       }
       userKeys.pk = savedPk;
-      userKeys.pub = window.NostrTools ? NostrTools.getPublicKey(savedPk) : savedPk.substring(0, 8);
       
-      // Update UI Preview
+      try {
+        userKeys.pub = NostrTools.getPublicKey(savedPk);
+      } catch (e) {
+        userKeys.pub = savedPk.substring(0, 8);
+      }
+      
       document.getElementById('pubkey-preview').innerText = userKeys.pub.substring(0, 6) + '...';
     }
 
-    // 3. Tip Handling (WebLN / Micro-Tips)
-    async function handleTip(postId, amount) {
-      // Haptic Feedback
-      if (navigator.vibrate) navigator.vibrate(50);
-
-      // WebLN Check
-      if (window.webln) {
+    // 3. Gyvas P2P ryšys su Nostr relėjais
+    function connectToRelays() {
+      RELAYS.forEach(url => {
         try {
-          await window.webln.enable();
-          // Prompt LN payment
-          alert(`Iniciuojamas ${amount} € Lightning mikro-mokėjimas postui: ${postId}`);
-        } catch (err) {
-          console.warn('WebLN rejected:', err);
-        }
-      } else {
-        // Demo Tip Simulation
-        let currentBalance = parseFloat(localStorage.getItem('demo_balance') || '0.00');
-        currentBalance += parseFloat(amount);
-        localStorage.setItem('demo_balance', currentBalance.toFixed(2));
-        document.getElementById('balance-display').innerText = `${currentBalance.toFixed(2)} €`;
+          const ws = new WebSocket(url);
 
-        // Success Toast/Animation
-        alert(`🔥 Išsiųstas +${amount} € Tip'as autoriai!`);
-      }
+          ws.onopen = () => {
+            // Prašome naujausių tekstų/media įrašų (Kind 1)
+            const subRequest = JSON.stringify([
+              "REQ", 
+              "hype_feed_sub", 
+              { kinds: [1], limit: 15 }
+            ]);
+            ws.send(subRequest);
+          };
+
+          ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data[0] === "EVENT" && data[2]) {
+              handleIncomingEvent(data[2]);
+            }
+          };
+        } catch (e) {
+          console.warn(`Klaida jungiantis prie ${url}`, e);
+        }
+      });
     }
 
-    // 4. Image Upload Trigger
+    // 4. Įeinančių įrašų filtracija (tik nuotraukos)
+    function handleIncomingEvent(event) {
+      if (postsMap.has(event.id)) return;
+      postsMap.set(event.id, event);
+
+      // Ištraukiame nuotraukos URL iš teksto
+      const imageUrlMatch = event.content.match(/(https?:\/\/.*\.(?:png|jpg|jpeg|gif|webp))/i);
+      if (!imageUrlMatch) return; // Jei nėra vaizdo — praleidžiame
+
+      const imageUrl = imageUrlMatch[0];
+      const cleanText = event.content.replace(imageUrl, '').trim();
+
+      renderCard(event.id, event.pubkey, imageUrl, cleanText);
+    }
+
+    // 5. Dinaminis kortelės įkėlimas į HTML
+    function renderCard(id, pubkey, mediaUrl, text) {
+      const container = document.getElementById('feed-container');
+      const shortPubkey = pubkey.substring(0, 8);
+      
+      const cardHtml = `
+        <section class="snap-card h-screen w-screen relative flex items-center justify-center bg-zinc-900" id="${id}">
+          <img src="${mediaUrl}" alt="Visual Content" class="w-full h-full object-cover" loading="lazy" />
+          <div class="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/80 pointer-events-none"></div>
+
+          <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-20">
+            <button onclick="handleTip('${id}', '0.10')" class="group relative flex flex-col items-center">
+              <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-orange-600 to-yellow-500 p-0.5 shadow-lg shadow-orange-500/30 active:scale-95 transition">
+                <div class="w-full h-full bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
+                  <i data-lucide="flame" class="w-7 h-7 text-orange-400 fill-orange-400"></i>
+                </div>
+              </div>
+              <span class="text-[11px] font-bold mt-1 text-orange-400 font-mono">+0.10 €</span>
+            </button>
+
+            <button onclick="sharePost('${id}')" class="flex flex-col items-center group">
+              <div class="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-95 transition">
+                <i data-lucide="share-2" class="w-5 h-5 text-gray-300"></i>
+              </div>
+              <span class="text-[10px] text-gray-400 mt-1">Dalintis</span>
+            </button>
+          </div>
+
+          <div class="absolute left-4 bottom-24 right-20 z-20">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-md border border-orange-500/30">
+                @${shortPubkey}
+              </span>
+            </div>
+            <p class="text-sm text-gray-200 line-clamp-2 drop-shadow">${text || 'Visual Drop'}</p>
+          </div>
+        </section>
+      `;
+
+      container.insertAdjacentHTML('beforeend', cardHtml);
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // 6. Tip Handling
+    async function handleTip(postId, amount) {
+      if (navigator.vibrate) navigator.vibrate(50);
+
+      let currentBalance = parseFloat(localStorage.getItem('demo_balance') || '0.20');
+      currentBalance += parseFloat(amount);
+      localStorage.setItem('demo_balance', currentBalance.toFixed(2));
+      document.getElementById('balance-display').innerText = `${currentBalance.toFixed(2)} €`;
+    }
+
+    function sharePost(postId) {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Nuoroda nukopijuota!');
+    }
+
     function triggerUpload() {
       document.getElementById('file-input').click();
     }
 
-    function uploadImage(event) {
-      const file = event.target.files[0];
-      if (file) {
-        alert(`Failas "${file.name}" paruoštas optimizavimui ir kėlimui į IPFS!`);
-        // Čia jungiamas IPFS / Pinning Client padavimas
-      }
-    }
-
-    function sharePost(postId) {
-      if (navigator.share) {
-        navigator.share({
-          title: 'Hype Feed',
-          text: 'Žiūrėk šį vaizdą be cenzūros!',
-          url: window.location.href,
-        });
-      } else {
-        navigator.clipboard.writeText(window.location.href);
-        alert('Nuoroda nukopijuota!');
-      }
-    }
-
-    function toggleWalletModal() {
-      alert(`Tavo tapatybės raktas:\n${userKeys.pub}\n\nKaip išsiimti balansą: įvesk savo Lightning Address arba e-mail.`);
-    }
-
-    // Startup Initialization
+    // Startup
     window.addEventListener('DOMContentLoaded', () => {
       initIdentity();
-      const savedBal = localStorage.getItem('demo_balance') || '0.00';
+      connectToRelays();
+      const savedBal = localStorage.getItem('demo_balance') || '0.20';
       document.getElementById('balance-display').innerText = `${savedBal} €`;
     });
   </script>
