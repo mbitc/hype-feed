@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Hype Feed // Pure Visual P2P Stream</title>
+  <title>Hype Feed // Pure P2P Stream</title>
   
   <!-- CDN Bibliotekos -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
 
   <style>
-    /* Užtikriname, kad ekrano aukštis atitiktų tikrąjį mobiliuko langą */
     html, body {
       height: 100%;
       margin: 0;
@@ -22,7 +22,7 @@
 
     .feed-viewport {
       height: 100vh;
-      height: 100dvh; /* Dynamic Viewport Height mobiliesiems */
+      height: 100dvh;
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       -webkit-overflow-scrolling: touch;
@@ -32,7 +32,7 @@
       height: 100vh;
       height: 100dvh;
       scroll-snap-align: start;
-      scroll-snap-stop: normal; /* Normalus prisirišimas, kad nesublokuotų piršto judesio */
+      scroll-snap-stop: normal;
       position: relative;
       width: 100%;
       flex-shrink: 0;
@@ -42,7 +42,7 @@
 <body class="select-none font-sans">
 
   <!-- TOP BAR -->
-  <header class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-xs pointer-events-none">
+  <header class="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-xs pointer-events-none">
     <div class="flex items-center gap-2 pointer-events-auto">
       <span class="w-3 h-3 rounded-full bg-orange-500 animate-pulse"></span>
       <h1 class="font-extrabold tracking-wider text-sm bg-gradient-to-r from-orange-400 to-yellow-300 bg-clip-text text-transparent">
@@ -59,19 +59,45 @@
 
       <!-- Identity Preview -->
       <div class="text-[10px] font-mono text-zinc-400 px-2 py-1 rounded bg-black/40 border border-white/5">
-        <span id="pubkey-preview">0x4185...</span>
+        <span id="pubkey-preview">...</span>
       </div>
     </div>
   </header>
 
   <!-- FEED CONTAINER -->
   <main id="feed-container" class="feed-viewport w-full">
-    <!-- Kortelės pildysis čia -->
+    <div id="empty-state" class="h-full w-full flex flex-col items-center justify-center p-6 text-center">
+      <i data-lucide="radio" class="w-12 h-12 text-orange-500 animate-pulse mb-3"></i>
+      <p class="text-zinc-400 text-sm">Ieškoma gyvų P2P postų tinkle...</p>
+      <p class="text-zinc-600 text-xs mt-1">Būk pirmas ir įkelk nuotrauką paspaudęs „+“</p>
+    </div>
   </main>
 
+  <!-- UPLOAD MODAL (z-[100] Užtikrina, kad mygtukai neatidurs viršuje) -->
+  <div id="upload-modal" class="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md hidden flex-col justify-between p-6">
+    <div class="flex justify-between items-center">
+      <h2 class="text-lg font-bold text-orange-400">Naujas P2P Įrašas</h2>
+      <button onclick="closeUploadModal()" class="text-zinc-400 hover:text-white p-2">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+    </div>
+
+    <div class="my-auto flex flex-col items-center gap-4 w-full max-w-md mx-auto">
+      <div class="w-full max-h-[50vh] rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex items-center justify-center p-2">
+        <img id="upload-preview" src="" alt="Preview" class="max-h-[45vh] w-auto object-contain rounded-lg" />
+      </div>
+      <input type="text" id="upload-caption" placeholder="Įrašyk aprašymą / hashtag..." class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500" />
+    </div>
+
+    <button id="publish-btn" onclick="publishPost()" class="w-full max-w-md mx-auto py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black active:scale-95 transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20">
+      <i data-lucide="send" class="w-5 h-5"></i>
+      <span>Ištransliuoti į P2P tinklą</span>
+    </button>
+  </div>
+
   <!-- FLOATING ACTION BUTTON (UPLOAD) -->
-  <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-    <input type="file" id="file-input" accept="image/*" class="hidden" onchange="uploadImage(event)" />
+  <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
+    <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileSelect(event)" />
     <button onclick="triggerUpload()" class="w-14 h-14 rounded-full bg-gradient-to-tr from-orange-500 to-yellow-400 p-0.5 shadow-xl shadow-orange-500/20 active:scale-90 transition">
       <div class="w-full h-full bg-zinc-950 rounded-full flex items-center justify-center">
         <i data-lucide="plus" class="w-7 h-7 text-orange-400"></i>
@@ -80,51 +106,52 @@
   </div>
 
   <script>
+    // Patikimesni relėjai survive WebSocket handshake
     const RELAYS = [
-      'wss://relay.nostr.band',
       'wss://nos.lol',
-      'wss://relay.damus.io'
+      'wss://relay.nostr.band',
+      'wss://purplerelay.com'
     ];
 
-    let postCount = 0;
-    let observer = null;
+    let userKeys = { pk: '', pub: '' };
     let loadedPostIds = new Set();
+    let selectedFile = null;
+    let openSockets = [];
+    let previewDataUrl = '';
 
-    // Atsarginis patikimas paveikslėlių sąrašas (Fallback CDN)
-    const BACKUP_IMAGES = [
-      'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1080&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?q=80&w=1080&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=1080&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1080&auto=format&fit=crop'
-    ];
-
-    function initIntersectionObserver() {
-      // Stebi, kada vartotojas pasiekia paskutinę kortelę ir tik tada prideda naujas
-      observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            observer.unobserve(entry.target);
-            // Kai matoma paskutinė kortelė - įkrauname dar 3
-            appendMoreCards(3);
-          }
-        });
-      }, { threshold: 0.5 });
-    }
-
-    function appendMoreCards(count = 2) {
-      for (let i = 0; i < count; i++) {
-        postCount++;
-        const id = 'card-' + postCount + '-' + Math.random().toString(36).substring(2, 7);
-        const fallbackImg = BACKUP_IMAGES[postCount % BACKUP_IMAGES.length];
-        const pubkey = Array.from({length: 8}, () => Math.floor(Math.random()*16).toString(16)).join('');
-        
-        createCardDOM(id, pubkey, fallbackImg, `Node Stream Drop #${postCount}`);
+    function initIdentity() {
+      let savedPk = localStorage.getItem('hype_priv_key');
+      if (!savedPk) {
+        if (window.NostrTools && typeof NostrTools.generatePrivateKey === 'function') {
+          savedPk = NostrTools.generatePrivateKey();
+        } else {
+          savedPk = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+            .map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        localStorage.setItem('hype_priv_key', savedPk);
       }
+      userKeys.pk = savedPk;
+
+      try {
+        if (window.NostrTools && typeof NostrTools.getPublicKey === 'function') {
+          userKeys.pub = NostrTools.getPublicKey(savedPk);
+        } else {
+          userKeys.pub = savedPk.substring(0, 8);
+        }
+      } catch (e) {
+        userKeys.pub = savedPk.substring(0, 8);
+      }
+
+      const pubEl = document.getElementById('pubkey-preview');
+      if (pubEl) pubEl.innerText = userKeys.pub.substring(0, 6) + '...';
     }
 
-    function createCardDOM(id, pubkey, mediaUrl, text) {
+    function createCardDOM(id, pubkey, mediaUrl, text, isPrepend = false) {
       if (loadedPostIds.has(id)) return;
       loadedPostIds.add(id);
+
+      const emptyState = document.getElementById('empty-state');
+      if (emptyState) emptyState.remove();
 
       const container = document.getElementById('feed-container');
       const card = document.createElement('section');
@@ -132,13 +159,14 @@
       card.id = id;
 
       const initialTips = localStorage.getItem(`post_tips_${id}`) || '0.00';
+      const shortPubkey = pubkey ? pubkey.substring(0, 8) : 'anon';
 
       card.innerHTML = `
         <img src="${mediaUrl}" 
              alt="Stream Visual" 
              class="w-full h-full object-cover" 
              loading="lazy"
-             onerror="this.onerror=null; this.src='${BACKUP_IMAGES[0]}';" />
+             onerror="this.parentElement.remove()" />
         
         <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80 pointer-events-none"></div>
 
@@ -167,22 +195,21 @@
         <div class="absolute left-4 bottom-24 right-20 z-20">
           <div class="flex items-center gap-2 mb-1">
             <span class="text-xs font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-md border border-orange-500/30 font-mono">
-              @${pubkey.substring(0, 8)}
+              @${shortPubkey}
             </span>
           </div>
-          <p class="text-sm text-zinc-200 line-clamp-2 drop-shadow">${text}</p>
+          <p class="text-sm text-zinc-200 line-clamp-2 drop-shadow">${text || ''}</p>
         </div>
       `;
 
-      container.appendChild(card);
+      if (isPrepend && container.firstChild) {
+        container.insertBefore(card, container.firstChild);
+        container.scrollTop = 0;
+      } else {
+        container.appendChild(card);
+      }
 
       if (window.lucide) lucide.createIcons();
-
-      // Atnaujiname IntersectionObserver, kad sektų pačią paskutinę kortelę
-      if (observer) {
-        const allCards = container.querySelectorAll('.feed-card');
-        observer.observe(allCards[allCards.length - 1]);
-      }
     }
 
     function connectNostrRelays() {
@@ -190,6 +217,7 @@
         try {
           const ws = new WebSocket(url);
           ws.onopen = () => {
+            openSockets.push(ws);
             ws.send(JSON.stringify(["REQ", "live_feed", { kinds: [1], limit: 30 }]));
           };
           ws.onmessage = (msg) => {
@@ -197,16 +225,122 @@
               const res = JSON.parse(msg.data);
               if (res[0] === "EVENT" && res[2]) {
                 const ev = res[2];
-                const imgMatch = ev.content.match(/(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp))/i);
+                const imgMatch = ev.content.match(/(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?|data:image\/[a-zA-Z]+;base64,[^\s]+)/i);
                 if (imgMatch) {
-                  postCount++;
-                  createCardDOM('nostr-' + ev.id, ev.pubkey, imgMatch[0], ev.content.replace(imgMatch[0], '').trim() || 'P2P Event Drop');
+                  createCardDOM('nostr-' + ev.id, ev.pubkey, imgMatch[0], ev.content.replace(imgMatch[0], '').trim());
                 }
               }
             } catch(e) {}
           };
         } catch(e) {}
       });
+    }
+
+    // --- UPLOAD ENGINE WITH CORS FALLBACK ---
+
+    function triggerUpload() {
+      document.getElementById('file-input').click();
+    }
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      selectedFile = file;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        previewDataUrl = e.target.result;
+        document.getElementById('upload-preview').src = previewDataUrl;
+        document.getElementById('upload-modal').classList.remove('hidden');
+        document.getElementById('upload-modal').classList.add('flex');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function closeUploadModal() {
+      document.getElementById('upload-modal').classList.add('hidden');
+      document.getElementById('upload-modal').classList.remove('flex');
+      selectedFile = null;
+      document.getElementById('file-input').value = '';
+    }
+
+    async function publishPost() {
+      if (!selectedFile) return;
+
+      const btn = document.getElementById('publish-btn');
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> <span>Ištransliuojama...</span>`;
+      if (window.lucide) lucide.createIcons();
+
+      let uploadedUrl = '';
+
+      try {
+        // Bandome kelti į P2P CDN providerį
+        const formData = new FormData();
+        formData.append('file[]', selectedFile);
+
+        const response = await fetch('https://nostr.build/api/v2/upload/files', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.data && data.data[0] && data.data[0].url) {
+            uploadedUrl = data.data[0].url;
+          }
+        }
+      } catch (err) {
+        console.warn('Remote upload unavailable (CORS/File Origin), fallbacks to Local Data Stream:', err);
+      }
+
+      // Jei CORS arba tinklas užblokuoja išorinius serverius, naudojame tiesioginį Data Stream
+      if (!uploadedUrl) {
+        uploadedUrl = previewDataUrl;
+      }
+
+      const caption = document.getElementById('upload-caption').value.trim();
+      const fullContent = `${caption} ${uploadedUrl}`.trim();
+
+      // Sukuriame Nostr Event (Kind 1)
+      const event = {
+        kind: 1,
+        pubkey: userKeys.pub,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [["t", "hypefeed"]],
+        content: fullContent
+      };
+
+      // Pasirašymas
+      try {
+        if (window.NostrTools && typeof NostrTools.finishEvent === 'function') {
+          NostrTools.finishEvent(event, userKeys.pk);
+        } else if (window.NostrTools && typeof NostrTools.getEventHash === 'function') {
+          event.id = NostrTools.getEventHash(event);
+          event.sig = NostrTools.signEvent(event, userKeys.pk);
+        }
+      } catch(e) {
+        event.id = 'loc-' + Date.now();
+      }
+
+      // Išsiunčiame į P2P tinklą
+      const message = JSON.stringify(["EVENT", event]);
+      openSockets.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(message);
+        }
+      });
+
+      // Momentinis atvaizdavimas viršuje
+      createCardDOM('local-' + Date.now(), userKeys.pub, uploadedUrl, caption, true);
+
+      // Uždarome modalą
+      closeUploadModal();
+      document.getElementById('upload-caption').value = '';
+
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="send" class="w-5 h-5"></i> <span>Ištransliuoti į P2P tinklą</span>`;
+      if (window.lucide) lucide.createIcons();
     }
 
     function handleTip(postId, amount) {
@@ -232,17 +366,12 @@
       if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
     }
 
-    function triggerUpload() { document.getElementById('file-input').click(); }
-    function uploadImage(e) { if(e.target.files[0]) alert(`Pasirinkta: ${e.target.files[0].name}`); }
     function sharePost(id) { alert('Nuoroda nukopijuota!'); }
     function toggleWalletModal() { alert('Piniginės balansas & Nostr raktai.'); }
 
     // Startas
     window.addEventListener('DOMContentLoaded', () => {
-      initIntersectionObserver();
-      // Sugeneruojame 3 pradines korteles
-      appendMoreCards(3);
-      // Fone junkimės prie Nostr relėjų
+      initIdentity();
       connectNostrRelays();
 
       const savedBal = localStorage.getItem('user_wallet_balance') || '5.00';
