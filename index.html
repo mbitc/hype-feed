@@ -3,21 +3,45 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Hype Feed // P2P Visual Stream</title>
+  <title>Hype Feed // Pure Visual P2P Stream</title>
   
+  <!-- CDN Bibliotekos -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
-  <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
-  <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
 
   <style>
-    body { background-color: #09090b; color: #ffffff; }
-    .snap-container { scroll-snap-type: y mandatory; overflow-y: scroll; height: 100vh; }
-    .snap-card { scroll-snap-align: start; scroll-snap-stop: always; }
+    /* Užtikriname, kad ekrano aukštis atitiktų tikrąjį mobiliuko langą */
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #09090b;
+      color: #ffffff;
+    }
+
+    .feed-viewport {
+      height: 100vh;
+      height: 100dvh; /* Dynamic Viewport Height mobiliesiems */
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .feed-card {
+      height: 100vh;
+      height: 100dvh;
+      scroll-snap-align: start;
+      scroll-snap-stop: normal; /* Normalus prisirišimas, kad nesublokuotų piršto judesio */
+      position: relative;
+      width: 100%;
+      flex-shrink: 0;
+    }
   </style>
 </head>
-<body class="select-none overflow-hidden font-sans">
+<body class="select-none font-sans">
 
+  <!-- TOP BAR -->
   <header class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-xs pointer-events-none">
     <div class="flex items-center gap-2 pointer-events-auto">
       <span class="w-3 h-3 rounded-full bg-orange-500 animate-pulse"></span>
@@ -27,20 +51,25 @@
     </div>
 
     <div class="flex items-center gap-3 pointer-events-auto">
+      <!-- Balance Display -->
       <button onclick="toggleWalletModal()" class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 active:scale-95 transition">
         <i data-lucide="zap" class="w-3.5 h-3.5 text-yellow-400 fill-yellow-400"></i>
         <span id="balance-display" class="text-xs font-mono font-bold text-yellow-300">5.00 €</span>
       </button>
 
+      <!-- Identity Preview -->
       <div class="text-[10px] font-mono text-zinc-400 px-2 py-1 rounded bg-black/40 border border-white/5">
-        <span id="pubkey-preview">...</span>
+        <span id="pubkey-preview">0x4185...</span>
       </div>
     </div>
   </header>
 
-  <main id="feed-container" class="snap-container w-full h-full">
-    </main>
+  <!-- FEED CONTAINER -->
+  <main id="feed-container" class="feed-viewport w-full">
+    <!-- Kortelės pildysis čia -->
+  </main>
 
+  <!-- FLOATING ACTION BUTTON (UPLOAD) -->
   <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
     <input type="file" id="file-input" accept="image/*" class="hidden" onchange="uploadImage(event)" />
     <button onclick="triggerUpload()" class="w-14 h-14 rounded-full bg-gradient-to-tr from-orange-500 to-yellow-400 p-0.5 shadow-xl shadow-orange-500/20 active:scale-90 transition">
@@ -52,239 +81,172 @@
 
   <script>
     const RELAYS = [
-      'wss://relay.damus.io',
-      'wss://nos.lol',
       'wss://relay.nostr.band',
-      'wss://nostr.mom'
+      'wss://nos.lol',
+      'wss://relay.damus.io'
     ];
 
-    const FALLBACK_BUFFER = [
-      {
-        id: 'fb-1',
-        pubkey: '0000000000000000',
-        mediaUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1080&auto=format&fit=crop',
-        text: 'Jungiamasi prie P2P relėjų... 🔥'
-      },
-      {
-        id: 'fb-2',
-        pubkey: '0000000000000000',
-        mediaUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?q=80&w=1080&auto=format&fit=crop',
-        text: 'Ieškoma naujausių vaizdų tinkle...'
-      }
+    let postCount = 0;
+    let observer = null;
+    let loadedPostIds = new Set();
+
+    // Atsarginis patikimas paveikslėlių sąrašas (Fallback CDN)
+    const BACKUP_IMAGES = [
+      'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1080&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?q=80&w=1080&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=1080&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?q=80&w=1080&auto=format&fit=crop'
     ];
 
-    let postsMap = new Map();
-    let userKeys = { pk: '', pub: '' };
-    let hasLiveEvents = false;
-
-    function initIdentity() {
-      let savedPk = localStorage.getItem('hype_priv_key');
-      if (!savedPk) {
-        if (window.NostrTools && typeof NostrTools.generatePrivateKey === 'function') {
-          savedPk = NostrTools.generatePrivateKey();
-        } else {
-          savedPk = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-        localStorage.setItem('hype_priv_key', savedPk);
-      }
-      userKeys.pk = savedPk;
-
-      try {
-        if (window.NostrTools && typeof NostrTools.getPublicKey === 'function') {
-          userKeys.pub = NostrTools.getPublicKey(savedPk);
-        } else {
-          userKeys.pub = savedPk.substring(0, 8);
-        }
-      } catch (e) {
-        userKeys.pub = savedPk.substring(0, 8);
-      }
-
-      const pubEl = document.getElementById('pubkey-preview');
-      if (pubEl) pubEl.innerText = userKeys.pub.substring(0, 6) + '...';
-    }
-
-    function loadInitialBuffer() {
-      const cachedPosts = JSON.parse(localStorage.getItem('hype_posts_cache') || '[]');
-
-      if (cachedPosts.length > 0) {
-        cachedPosts.forEach(post => {
-          postsMap.set(post.id, post);
-          renderCard(post.id, post.pubkey, post.mediaUrl, post.text);
+    function initIntersectionObserver() {
+      // Stebi, kada vartotojas pasiekia paskutinę kortelę ir tik tada prideda naujas
+      observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            observer.unobserve(entry.target);
+            // Kai matoma paskutinė kortelė - įkrauname dar 3
+            appendMoreCards(3);
+          }
         });
-      } else {
-        FALLBACK_BUFFER.forEach(post => {
-          renderCard(post.id, post.pubkey, post.mediaUrl, post.text);
-        });
+      }, { threshold: 0.5 });
+    }
+
+    function appendMoreCards(count = 2) {
+      for (let i = 0; i < count; i++) {
+        postCount++;
+        const id = 'card-' + postCount + '-' + Math.random().toString(36).substring(2, 7);
+        const fallbackImg = BACKUP_IMAGES[postCount % BACKUP_IMAGES.length];
+        const pubkey = Array.from({length: 8}, () => Math.floor(Math.random()*16).toString(16)).join('');
+        
+        createCardDOM(id, pubkey, fallbackImg, `Node Stream Drop #${postCount}`);
       }
     }
 
-    function saveToCache(id, pubkey, mediaUrl, text) {
-      let cached = JSON.parse(localStorage.getItem('hype_posts_cache') || '[]');
-      cached = [{ id, pubkey, mediaUrl, text }, ...cached.filter(p => p.id !== id)].slice(0, 15);
-      localStorage.setItem('hype_posts_cache', JSON.stringify(cached));
+    function createCardDOM(id, pubkey, mediaUrl, text) {
+      if (loadedPostIds.has(id)) return;
+      loadedPostIds.add(id);
+
+      const container = document.getElementById('feed-container');
+      const card = document.createElement('section');
+      card.className = 'feed-card flex items-center justify-center bg-zinc-950 overflow-hidden';
+      card.id = id;
+
+      const initialTips = localStorage.getItem(`post_tips_${id}`) || '0.00';
+
+      card.innerHTML = `
+        <img src="${mediaUrl}" 
+             alt="Stream Visual" 
+             class="w-full h-full object-cover" 
+             loading="lazy"
+             onerror="this.onerror=null; this.src='${BACKUP_IMAGES[0]}';" />
+        
+        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80 pointer-events-none"></div>
+
+        <!-- Šoniniai valdikliai -->
+        <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-20">
+          <button onclick="handleTip('${id}', '0.10')" class="group relative flex flex-col items-center">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-orange-600 to-yellow-500 p-0.5 shadow-lg shadow-orange-500/30 active:scale-95 transition">
+              <div class="w-full h-full bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
+                <i data-lucide="flame" class="w-7 h-7 text-orange-400 fill-orange-400"></i>
+              </div>
+            </div>
+            <span id="tip-count-${id}" class="text-[11px] font-bold mt-1 text-orange-400 font-mono">
+              ${parseFloat(initialTips).toFixed(2)} €
+            </span>
+          </button>
+
+          <button onclick="sharePost('${id}')" class="flex flex-col items-center group">
+            <div class="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-95 transition">
+              <i data-lucide="share-2" class="w-5 h-5 text-zinc-300"></i>
+            </div>
+            <span class="text-[10px] text-zinc-400 mt-1">Dalintis</span>
+          </button>
+        </div>
+
+        <!-- Aprašymas -->
+        <div class="absolute left-4 bottom-24 right-20 z-20">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-md border border-orange-500/30 font-mono">
+              @${pubkey.substring(0, 8)}
+            </span>
+          </div>
+          <p class="text-sm text-zinc-200 line-clamp-2 drop-shadow">${text}</p>
+        </div>
+      `;
+
+      container.appendChild(card);
+
+      if (window.lucide) lucide.createIcons();
+
+      // Atnaujiname IntersectionObserver, kad sektų pačią paskutinę kortelę
+      if (observer) {
+        const allCards = container.querySelectorAll('.feed-card');
+        observer.observe(allCards[allCards.length - 1]);
+      }
     }
 
-    function connectToRelays() {
+    function connectNostrRelays() {
       RELAYS.forEach(url => {
         try {
           const ws = new WebSocket(url);
-
           ws.onopen = () => {
-            const subRequest = JSON.stringify([
-              "REQ", 
-              "hype_live_sub", 
-              { kinds: [1], limit: 40 }
-            ]);
-            ws.send(subRequest);
+            ws.send(JSON.stringify(["REQ", "live_feed", { kinds: [1], limit: 30 }]));
           };
-
-          ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            if (data[0] === "EVENT" && data[2]) {
-              handleIncomingEvent(data[2]);
-            }
+          ws.onmessage = (msg) => {
+            try {
+              const res = JSON.parse(msg.data);
+              if (res[0] === "EVENT" && res[2]) {
+                const ev = res[2];
+                const imgMatch = ev.content.match(/(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp))/i);
+                if (imgMatch) {
+                  postCount++;
+                  createCardDOM('nostr-' + ev.id, ev.pubkey, imgMatch[0], ev.content.replace(imgMatch[0], '').trim() || 'P2P Event Drop');
+                }
+              }
+            } catch(e) {}
           };
-        } catch (e) {
-          console.warn(`Ryšio klaida su ${url}`, e);
-        }
+        } catch(e) {}
       });
     }
 
-    function handleIncomingEvent(event) {
-      if (postsMap.has(event.id)) return;
-
-      const imageUrlMatch = event.content.match(/(https?:\/\/.*\.(?:png|jpg|jpeg|gif|webp))/i);
-      if (!imageUrlMatch) return;
-
-      // Jei tai pirmas gyvas įrašas – valome atsarginius fallbackus
-      if (!hasLiveEvents) {
-        hasLiveEvents = true;
-        const fallbackEls = document.querySelectorAll('[id^="fb-"]');
-        fallbackEls.forEach(el => el.remove());
-      }
-
-      postsMap.set(event.id, event);
-      const imageUrl = imageUrlMatch[0];
-      const cleanText = event.content.replace(imageUrl, '').trim();
-
-      saveToCache(event.id, event.pubkey, imageUrl, cleanText);
-      renderCard(event.id, event.pubkey, imageUrl, cleanText);
-    }
-
-    function renderCard(id, pubkey, mediaUrl, text) {
-      const container = document.getElementById('feed-container');
-      if (!container) return;
-
-      const shortPubkey = pubkey.substring(0, 8);
-      const initialPostTips = localStorage.getItem(`post_tips_${id}`) || '0.00';
-      
-      const cardHtml = `
-        <section class="snap-card h-screen w-screen relative flex items-center justify-center bg-zinc-950" id="${id}">
-          <img src="${mediaUrl}" alt="Visual Drop" class="w-full h-full object-cover" loading="lazy" onError="this.parentElement.remove()" />
-          <div class="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/80 pointer-events-none"></div>
-
-          <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-20">
-            <button onclick="handleTip('${id}', '0.10')" class="group relative flex flex-col items-center">
-              <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-orange-600 to-yellow-500 p-0.5 shadow-lg shadow-orange-500/30 active:scale-95 transition">
-                <div class="w-full h-full bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
-                  <i data-lucide="flame" class="w-7 h-7 text-orange-400 fill-orange-400"></i>
-                </div>
-              </div>
-              <span id="tip-count-${id}" class="text-[11px] font-bold mt-1 text-orange-400 font-mono">
-                ${parseFloat(initialPostTips).toFixed(2)} €
-              </span>
-            </button>
-
-            <button onclick="sharePost('${id}')" class="flex flex-col items-center group">
-              <div class="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-95 transition">
-                <i data-lucide="share-2" class="w-5 h-5 text-zinc-300"></i>
-              </div>
-              <span class="text-[10px] text-zinc-400 mt-1">Dalintis</span>
-            </button>
-          </div>
-
-          <div class="absolute left-4 bottom-24 right-20 z-20">
-            <div class="flex items-center gap-2 mb-1">
-              <span class="text-xs font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-md border border-orange-500/30 font-mono">
-                @${shortPubkey}
-              </span>
-            </div>
-            <p class="text-sm text-zinc-200 line-clamp-2 drop-shadow">${text || 'Visual Drop'}</p>
-          </div>
-        </section>
-      `;
-
-      container.insertAdjacentHTML('beforeend', cardHtml);
-      if (window.lucide) lucide.createIcons();
-    }
-
-    async function handleTip(postId, amount) {
+    function handleTip(postId, amount) {
       const numericAmount = parseFloat(amount);
-      
       let userBalance = parseFloat(localStorage.getItem('user_wallet_balance') || '5.00');
 
       if (userBalance < numericAmount) {
-        alert('Nepakanka lėšų! Pasipildykite piniginę.');
+        alert('Nepakanka lėšų!');
         return;
       }
 
       userBalance -= numericAmount;
       localStorage.setItem('user_wallet_balance', userBalance.toFixed(2));
-      
-      const balEl = document.getElementById('balance-display');
-      if (balEl) balEl.innerText = `${userBalance.toFixed(2)} €`;
+      document.getElementById('balance-display').innerText = `${userBalance.toFixed(2)} €`;
 
       let postTips = parseFloat(localStorage.getItem(`post_tips_${postId}`) || '0.00');
       postTips += numericAmount;
       localStorage.setItem(`post_tips_${postId}`, postTips.toFixed(2));
 
       const postTipEl = document.getElementById(`tip-count-${postId}`);
-      if (postTipEl) {
-        postTipEl.innerText = `${postTips.toFixed(2)} €`;
-      }
+      if (postTipEl) postTipEl.innerText = `${postTips.toFixed(2)} €`;
 
       if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
     }
 
-    function triggerUpload() {
-      document.getElementById('file-input').click();
-    }
+    function triggerUpload() { document.getElementById('file-input').click(); }
+    function uploadImage(e) { if(e.target.files[0]) alert(`Pasirinkta: ${e.target.files[0].name}`); }
+    function sharePost(id) { alert('Nuoroda nukopijuota!'); }
+    function toggleWalletModal() { alert('Piniginės balansas & Nostr raktai.'); }
 
-    function uploadImage(event) {
-      const file = event.target.files[0];
-      if (file) {
-        alert(`Failas "${file.name}" pasiruošęs optimizavimui ir kėlimui į IPFS!`);
-      }
-    }
-
-    function sharePost(postId) {
-      if (navigator.share) {
-        navigator.share({
-          title: 'Hype Feed',
-          text: 'Žiūrėk šį vaizdą be cenzūros!',
-          url: window.location.href,
-        });
-      } else {
-        navigator.clipboard.writeText(window.location.href);
-        alert('Nuoroda nukopijuota!');
-      }
-    }
-
-    function toggleWalletModal() {
-      alert(`Tavo Nostr raktas:\n${userKeys.pub}\n\nLėšų išėmimas: įvesk savo Lightning Address.`);
-    }
-
-    // Startup Engine
+    // Startas
     window.addEventListener('DOMContentLoaded', () => {
-      if (window.lucide) lucide.createIcons();
-      initIdentity();
-      loadInitialBuffer();
-      connectToRelays();
+      initIntersectionObserver();
+      // Sugeneruojame 3 pradines korteles
+      appendMoreCards(3);
+      // Fone junkimės prie Nostr relėjų
+      connectNostrRelays();
 
       const savedBal = localStorage.getItem('user_wallet_balance') || '5.00';
-      const balEl = document.getElementById('balance-display');
-      if (balEl) balEl.innerText = `${parseFloat(savedBal).toFixed(2)} €`;
+      document.getElementById('balance-display').innerText = `${parseFloat(savedBal).toFixed(2)} €`;
     });
   </script>
 </body>
