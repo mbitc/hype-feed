@@ -1,9 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="lt">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <!-- Fullscreen / Mobile App viewport setup -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Hype Feed // Pure P2P Stream</title>
+
+  <!-- PWA & Mobile Web App Meta Tags (Paslepia naršyklės barą) -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="HypeFeed" />
+  <meta name="theme-color" content="#09090b" />
+
+  <!-- Dynamic Web App Manifest Data-URL -->
+  <script>
+    (function() {
+      const manifest = {
+        name: "Hype Feed",
+        short_name: "HypeFeed",
+        start_url: "./",
+        display: "standalone",
+        background_color: "#09090b",
+        theme_color: "#09090b",
+        orientation: "portrait"
+      };
+      const stringManifest = JSON.stringify(manifest);
+      const blob = new Blob([stringManifest], {type: 'application/json'});
+      const manifestURL = URL.createObjectURL(blob);
+      const link = document.createElement('link');
+      link.rel = 'manifest';
+      link.href = manifestURL;
+      document.head.appendChild(link);
+    })();
+  </script>
 
   <!-- CDN Libraries -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -19,6 +49,9 @@
       overflow: hidden;
       background-color: #09090b;
       color: #ffffff;
+      /* iPhone Notch ir gesture bar palaikymas */
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
     }
 
     .feed-viewport {
@@ -56,7 +89,7 @@
 <body class="select-none font-sans bg-zinc-950 text-white">
 
   <!-- TOP BAR -->
-  <header class="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
+  <header class="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 pt-env bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
     <div class="flex items-center gap-2 pointer-events-auto">
       <span id="net-indicator" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
       <h1 class="font-extrabold tracking-wider text-sm bg-gradient-to-r from-orange-400 to-yellow-300 bg-clip-text text-transparent">
@@ -341,10 +374,9 @@
     }
 
     function subscribeFeed(ws) {
-      // Expanded feed subscription logic to ensure stream populates instantly
       const filters = [
         { kinds: [1], '#t': ['hypefeed'], limit: 40 },
-        { kinds: [1], limit: 40 } // Broad stream filter fallback
+        { kinds: [1], limit: 40 }
       ];
       if (userGeohash) {
         filters.unshift({ kinds: [1], '#g': [userGeohash], limit: 30 });
@@ -528,7 +560,7 @@
       previewDataUrl = await compressImage(file);
       document.getElementById('upload-preview').src = previewDataUrl;
       showModal('upload-modal');
-      event.target.value = ''; // Reset input
+      event.target.value = '';
     }
 
     function closeUploadModal() {
