@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Hype Feed // Pure P2P Stream</title>
-  
+
   <!-- CDN Bibliotekos -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
   <style>
     html, body {
@@ -44,7 +45,7 @@
   <!-- TOP BAR -->
   <header class="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-xs pointer-events-none">
     <div class="flex items-center gap-2 pointer-events-auto">
-      <span class="w-3 h-3 rounded-full bg-orange-500 animate-pulse"></span>
+      <span id="net-indicator" class="w-3 h-3 rounded-full bg-orange-500 animate-pulse"></span>
       <h1 class="font-extrabold tracking-wider text-sm bg-gradient-to-r from-orange-400 to-yellow-300 bg-clip-text text-transparent">
         HYPE FEED
       </h1>
@@ -52,15 +53,15 @@
 
     <div class="flex items-center gap-3 pointer-events-auto">
       <!-- Balance Display -->
-      <button onclick="toggleWalletModal()" class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 active:scale-95 transition">
+      <button onclick="openWalletModal()" class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 active:scale-95 transition">
         <i data-lucide="zap" class="w-3.5 h-3.5 text-yellow-400 fill-yellow-400"></i>
-        <span id="balance-display" class="text-xs font-mono font-bold text-yellow-300">5.00 €</span>
+        <span id="balance-display" class="text-xs font-mono font-bold text-yellow-300">0 ⚡</span>
       </button>
 
       <!-- Identity Preview -->
-      <div class="text-[10px] font-mono text-zinc-400 px-2 py-1 rounded bg-black/40 border border-white/5">
+      <button onclick="openWalletModal()" class="text-[10px] font-mono text-zinc-400 px-2 py-1 rounded bg-black/40 border border-white/5">
         <span id="pubkey-preview">...</span>
-      </div>
+      </button>
     </div>
   </header>
 
@@ -68,15 +69,15 @@
   <main id="feed-container" class="feed-viewport w-full">
     <div id="empty-state" class="h-full w-full flex flex-col items-center justify-center p-6 text-center">
       <i data-lucide="radio" class="w-12 h-12 text-orange-500 animate-pulse mb-3"></i>
-      <p class="text-zinc-400 text-sm">Ieškoma gyvų P2P postų tinkle...</p>
-      <p class="text-zinc-600 text-xs mt-1">Būk pirmas ir įkelk nuotrauką paspaudęs „+“</p>
+      <p class="text-zinc-400 text-sm" data-i18n="empty_searching">Ieškoma gyvų P2P postų tinkle...</p>
+      <p class="text-zinc-600 text-xs mt-1" data-i18n="empty_hint">Būk pirmas ir įkelk nuotrauką paspaudęs „+“</p>
     </div>
   </main>
 
-  <!-- UPLOAD MODAL (z-[100] Užtikrina, kad mygtukai neatidurs viršuje) -->
+  <!-- UPLOAD MODAL -->
   <div id="upload-modal" class="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md hidden flex-col justify-between p-6">
     <div class="flex justify-between items-center">
-      <h2 class="text-lg font-bold text-orange-400">Naujas P2P Įrašas</h2>
+      <h2 class="text-lg font-bold text-orange-400" data-i18n="new_post_title">Naujas P2P Įrašas</h2>
       <button onclick="closeUploadModal()" class="text-zinc-400 hover:text-white p-2">
         <i data-lucide="x" class="w-6 h-6"></i>
       </button>
@@ -86,13 +87,51 @@
       <div class="w-full max-h-[50vh] rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex items-center justify-center p-2">
         <img id="upload-preview" src="" alt="Preview" class="max-h-[45vh] w-auto object-contain rounded-lg" />
       </div>
-      <input type="text" id="upload-caption" placeholder="Įrašyk aprašymą / hashtag..." class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500" />
+      <input type="text" id="upload-caption" data-i18n-placeholder="caption_placeholder" placeholder="Įrašyk aprašymą / hashtag..." class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500" />
     </div>
 
     <button id="publish-btn" onclick="publishPost()" class="w-full max-w-md mx-auto py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black active:scale-95 transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20">
       <i data-lucide="send" class="w-5 h-5"></i>
-      <span>Ištransliuoti į P2P tinklą</span>
+      <span data-i18n="publish_btn">Ištransliuoti į P2P tinklą</span>
     </button>
+  </div>
+
+  <!-- ZAP MODAL (NIP-57) -->
+  <div id="zap-modal" class="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md hidden flex-col justify-between p-6">
+    <div class="flex justify-between items-center">
+      <h2 class="text-lg font-bold text-orange-400" data-i18n="zap_title">Paremti ⚡ Zap</h2>
+      <button onclick="closeZapSheet()" class="text-zinc-400 hover:text-white p-2">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+    </div>
+    <div id="zap-body" class="my-auto flex flex-col items-center gap-3 w-full max-w-md mx-auto text-center"></div>
+    <div></div>
+  </div>
+
+  <!-- WALLET / SETTINGS MODAL -->
+  <div id="wallet-modal" class="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md hidden flex-col justify-between p-6">
+    <div class="flex justify-between items-center">
+      <h2 class="text-lg font-bold text-orange-400" data-i18n="wallet_title">Piniginė</h2>
+      <button onclick="closeWalletModal()" class="text-zinc-400 hover:text-white p-2">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+    </div>
+    <div class="my-auto flex flex-col gap-4 w-full max-w-md mx-auto">
+      <div id="ext-status" class="text-[11px] text-zinc-500"></div>
+      <div class="text-xs font-mono text-zinc-400 break-all bg-zinc-900 rounded-lg p-3 border border-white/10">
+        <div class="text-zinc-500 mb-1">Public key</div>
+        <div id="wallet-npub">...</div>
+      </div>
+      <div>
+        <label class="text-xs text-zinc-400 block mb-1" data-i18n="lud16_label">Lightning adresas (gauti Zaps)</label>
+        <div class="flex gap-2">
+          <input id="lud16-input" type="text" placeholder="you@getalby.com" class="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500" />
+          <button onclick="saveLud16()" class="px-4 py-2 rounded-lg bg-orange-500 text-black text-sm font-bold" data-i18n="lud16_save">Išsaugoti</button>
+        </div>
+        <div id="lud16-status" class="text-[11px] text-emerald-400 mt-1 h-4"></div>
+      </div>
+      <button onclick="resetIdentity()" class="text-xs text-red-400 underline mt-4 text-left" data-i18n="new_identity">Naujas tapatumas</button>
+    </div>
   </div>
 
   <!-- FLOATING ACTION BUTTON (UPLOAD) -->
@@ -106,47 +145,268 @@
   </div>
 
   <script>
-    // Patikimesni relėjai survive WebSocket handshake
     const RELAYS = [
       'wss://nos.lol',
       'wss://relay.nostr.band',
       'wss://purplerelay.com'
     ];
+    const GEOHASH_PRECISION = 5;
 
+    const I18N = {
+      lt: {
+        empty_searching: 'Ieškoma gyvų P2P postų tinkle...',
+        empty_hint: 'Būk pirmas ir įkelk nuotrauką paspaudęs „+“',
+        new_post_title: 'Naujas P2P Įrašas',
+        caption_placeholder: 'Įrašyk aprašymą / hashtag...',
+        publish_btn: 'Ištransliuoti į P2P tinklą',
+        publishing: 'Ištransliuojama...',
+        share_toast: 'Nuoroda nukopijuota!',
+        wallet_title: 'Piniginė',
+        zap_title: 'Paremti ⚡ Zap',
+        zap_send: 'Siųsti Zap',
+        zap_resolving: 'Ieškoma gavėjo Lightning adreso...',
+        zap_no_lud16: 'Autorius dar nepridėjo Lightning adreso.',
+        zap_invoice_loading: 'Generuojama sąskaita...',
+        zap_pay_with_ext: 'Apmokėti su pinigine',
+        zap_or_scan: 'arba nuskenuok QR kodą',
+        zap_error: 'Nepavyko sukurti Zap užklausos (LNURL serveris gali neturėti CORS).',
+        zap_copy: 'Kopijuoti invoice',
+        lud16_label: 'Lightning adresas (gauti Zaps)',
+        lud16_save: 'Išsaugoti',
+        lud16_saved: 'Išsaugota',
+        new_identity: 'Naujas tapatumas',
+        using_extension: 'Prisijungta per Nostr plėtinį (NIP-07)',
+        local_badge: 'vietinis'
+      },
+      en: {
+        empty_searching: 'Searching for live P2P posts...',
+        empty_hint: 'Be the first — upload a photo with "+"',
+        new_post_title: 'New P2P Post',
+        caption_placeholder: 'Write a caption / hashtag...',
+        publish_btn: 'Broadcast to P2P network',
+        publishing: 'Broadcasting...',
+        share_toast: 'Link copied!',
+        wallet_title: 'Wallet',
+        zap_title: 'Support ⚡ Zap',
+        zap_send: 'Send Zap',
+        zap_resolving: 'Looking up recipient Lightning address...',
+        zap_no_lud16: "Author hasn't added a Lightning address yet.",
+        zap_invoice_loading: 'Generating invoice...',
+        zap_pay_with_ext: 'Pay with wallet extension',
+        zap_or_scan: 'or scan the QR code',
+        zap_error: 'Failed to create Zap request (LNURL server may lack CORS).',
+        zap_copy: 'Copy invoice',
+        lud16_label: 'Lightning address (receive Zaps)',
+        lud16_save: 'Save',
+        lud16_saved: 'Saved',
+        new_identity: 'New identity',
+        using_extension: 'Connected via Nostr extension (NIP-07)',
+        local_badge: 'local'
+      }
+    };
+    let currentLang = 'lt';
+    function t(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.lt[key] || key; }
+
+    // BŪSENA
     let userKeys = { pk: '', pub: '' };
+    let usingExtension = false;
+    let userGeohash = null;
     let loadedPostIds = new Set();
     let selectedFile = null;
-    let openSockets = [];
     let previewDataUrl = '';
+    let openSockets = [];
+    let pendingResolvers = {};
+    let profileCache = new Map();
+    let processedZapReceipts = new Set();
+    let totalReceivedSats = 0;
+    let currentZapTarget = null;
+    let selectedZapAmount = 100;
 
-    function initIdentity() {
-      let savedPk = localStorage.getItem('hype_priv_key');
-      if (!savedPk) {
-        if (window.NostrTools && typeof NostrTools.generatePrivateKey === 'function') {
-          savedPk = NostrTools.generatePrivateKey();
-        } else {
-          savedPk = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-            .map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-        localStorage.setItem('hype_priv_key', savedPk);
+    // CONVERTERS
+    function hexToBytes(hex) {
+      let bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < bytes.length; i++) {
+        bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
       }
-      userKeys.pk = savedPk;
-
-      try {
-        if (window.NostrTools && typeof NostrTools.getPublicKey === 'function') {
-          userKeys.pub = NostrTools.getPublicKey(savedPk);
-        } else {
-          userKeys.pub = savedPk.substring(0, 8);
-        }
-      } catch (e) {
-        userKeys.pub = savedPk.substring(0, 8);
-      }
-
-      const pubEl = document.getElementById('pubkey-preview');
-      if (pubEl) pubEl.innerText = userKeys.pub.substring(0, 6) + '...';
+      return bytes;
     }
 
-    function createCardDOM(id, pubkey, mediaUrl, text, isPrepend = false) {
+    function applyAutoLanguage() {
+      const browserLang = (navigator.language || 'lt').slice(0, 2).toLowerCase();
+      currentLang = I18N[browserLang] ? browserLang : 'lt';
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.innerText = t(el.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+    }
+
+    // GEOHASH
+    const GEOHASH_BASE32 = '0123456789bcdefghjkmnpqrstuvwxyz';
+    function encodeGeohash(lat, lon, precision) {
+      let latRange = [-90, 90], lonRange = [-180, 180];
+      let geohash = '', isEven = true, bit = 0, ch = 0;
+      while (geohash.length < precision) {
+        if (isEven) {
+          const mid = (lonRange[0] + lonRange[1]) / 2;
+          if (lon > mid) { ch |= (1 << (4 - bit)); lonRange[0] = mid; } else { lonRange[1] = mid; }
+        } else {
+          const mid = (latRange[0] + latRange[1]) / 2;
+          if (lat > mid) { ch |= (1 << (4 - bit)); latRange[0] = mid; } else { latRange[1] = mid; }
+        }
+        isEven = !isEven;
+        if (bit < 4) { bit++; } else { geohash += GEOHASH_BASE32[ch]; bit = 0; ch = 0; }
+      }
+      return geohash;
+    }
+
+    function tryGetAutoLocation() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        const timer = setTimeout(() => resolve(null), 4000);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { clearTimeout(timer); resolve(encodeGeohash(pos.coords.latitude, pos.coords.longitude, GEOHASH_PRECISION)); },
+          () => { clearTimeout(timer); resolve(null); },
+          { enableHighAccuracy: false, timeout: 3500, maximumAge: 600000 }
+        );
+      });
+    }
+
+    // TAPATYBĖ
+    function randomHex32() {
+      return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    async function initIdentity() {
+      if (window.nostr && typeof window.nostr.getPublicKey === 'function') {
+        try {
+          userKeys.pub = await window.nostr.getPublicKey();
+          usingExtension = true;
+        } catch (e) { usingExtension = false; }
+      }
+      if (!usingExtension) {
+        let savedPk = localStorage.getItem('hype_priv_key');
+        if (!savedPk) {
+          savedPk = (window.NostrTools && NostrTools.generatePrivateKey) ? NostrTools.generatePrivateKey() : randomHex32();
+          localStorage.setItem('hype_priv_key', savedPk);
+        }
+        userKeys.pk = savedPk;
+        try {
+          const bytes = hexToBytes(savedPk);
+          userKeys.pub = (window.NostrTools && NostrTools.getPublicKey) ? NostrTools.getPublicKey(bytes) : savedPk.substring(0, 8);
+        } catch (e) { 
+          userKeys.pub = savedPk.substring(0, 8); 
+        }
+      }
+      const pubEl = document.getElementById('pubkey-preview');
+      if (pubEl) pubEl.innerText = (userKeys.pub || '').substring(0, 6) + '...';
+    }
+
+    async function signEventCompat(event) {
+      event.pubkey = userKeys.pub;
+      if (usingExtension && window.nostr) {
+        try { return await window.nostr.signEvent(event); }
+        catch (e) { console.warn('NIP-07 pasirašymas nepavyko, bandau lokaliai', e); }
+      }
+      try {
+        const pkBytes = hexToBytes(userKeys.pk);
+        if (window.NostrTools && NostrTools.finishEvent) {
+          return NostrTools.finishEvent(event, pkBytes);
+        } else if (window.NostrTools && NostrTools.getEventHash) {
+          event.id = NostrTools.getEventHash(event);
+          event.sig = NostrTools.signEvent(event, pkBytes);
+          return event;
+        }
+      } catch (e) { console.error('Sign error:', e); }
+      event.id = 'loc-' + Date.now();
+      return event;
+    }
+
+    function getNpub() {
+      try {
+        if (window.NostrTools && NostrTools.nip19 && NostrTools.nip19.npubEncode) {
+          return NostrTools.nip19.npubEncode(userKeys.pub);
+        }
+      } catch (e) {}
+      return userKeys.pub;
+    }
+
+    function resetIdentity() {
+      if (!confirm('Ištrinti dabartinį tapatumą ir sukurti naują? Šis veiksmas negrįžtamas.')) return;
+      localStorage.removeItem('hype_priv_key');
+      localStorage.removeItem('hype_lud16');
+      location.reload();
+    }
+
+    // RELAY VALDYMAS
+    function openRelayConnections() {
+      RELAYS.forEach(url => connectRelay(url, 0));
+    }
+
+    function connectRelay(url, attempt) {
+      let ws;
+      try { ws = new WebSocket(url); } catch (e) { return scheduleReconnect(url, attempt); }
+
+      ws.onopen = () => {
+        openSockets.push(ws);
+        subscribeFeed(ws);
+        subscribeZapReceipts(ws);
+        flushPendingProfileRequests(ws);
+      };
+      ws.onmessage = (msg) => routeMessage(msg);
+      ws.onclose = () => {
+        openSockets = openSockets.filter(s => s !== ws);
+        scheduleReconnect(url, attempt);
+      };
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    }
+
+    function scheduleReconnect(url, attempt) {
+      const delay = Math.min(30000, 1000 * Math.pow(2, attempt));
+      setTimeout(() => connectRelay(url, attempt + 1), delay);
+    }
+
+    function subscribeFeed(ws) {
+      const filters = [{ kinds: [1], '#t': ['hypefeed'], limit: 30 }];
+      if (userGeohash) filters.push({ kinds: [1], '#g': [userGeohash], limit: 30 });
+      ws.send(JSON.stringify(['REQ', 'live_feed', ...filters]));
+    }
+
+    function subscribeZapReceipts(ws) {
+      if (!userKeys.pub) return;
+      ws.send(JSON.stringify(['REQ', 'zap_receipts', { kinds: [9735], '#p': [userKeys.pub], limit: 200 }]));
+    }
+
+    function flushPendingProfileRequests(ws) {
+      Object.keys(pendingResolvers).forEach(subId => {
+        const req = pendingResolvers[subId];
+        if (req && req.filter) ws.send(JSON.stringify(['REQ', subId, req.filter]));
+      });
+    }
+
+    function routeMessage(msg) {
+      let res;
+      try { res = JSON.parse(msg.data); } catch (e) { return; }
+      if (res[0] !== 'EVENT') return;
+      const subId = res[1];
+      const ev = res[2];
+      if (!ev) return;
+
+      if (subId === 'live_feed') {
+        handleFeedEvent(ev);
+      } else if (subId === 'zap_receipts') {
+        handleZapReceipt(ev);
+      } else if (pendingResolvers[subId]) {
+        pendingResolvers[subId].events.push(ev);
+      }
+    }
+
+    // FEED
+    function handleFeedEvent(ev) {
+      const imgMatch = ev.content.match(/(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?|data:image\/[a-zA-Z]+;base64,[^\s]+)/i);
+      if (!imgMatch) return;
+      const isLocal = !!(userGeohash && ev.tags.some(tag => tag[0] === 'g' && tag[1] === userGeohash));
+      createCardDOM('nostr-' + ev.id, ev.pubkey, imgMatch[0], ev.content.replace(imgMatch[0], '').trim(), false, isLocal);
+    }
+
+    function createCardDOM(id, pubkey, mediaUrl, text, isPrepend, isLocal) {
       if (loadedPostIds.has(id)) return;
       loadedPostIds.add(id);
 
@@ -158,45 +418,42 @@
       card.className = 'feed-card flex items-center justify-center bg-zinc-950 overflow-hidden';
       card.id = id;
 
-      const initialTips = localStorage.getItem(`post_tips_${id}`) || '0.00';
       const shortPubkey = pubkey ? pubkey.substring(0, 8) : 'anon';
+      const badge = isLocal ? `<span class="text-[10px] text-emerald-400 ml-1">📍 ${t('local_badge')}</span>` : '';
 
       card.innerHTML = `
-        <img src="${mediaUrl}" 
-             alt="Stream Visual" 
-             class="w-full h-full object-cover" 
+        <img src="${mediaUrl}"
+             alt="Stream Visual"
+             class="w-full h-full object-cover"
              loading="lazy"
              onerror="this.parentElement.remove()" />
-        
+
         <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80 pointer-events-none"></div>
 
-        <!-- Šoniniai valdikliai -->
         <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-20">
-          <button onclick="handleTip('${id}', '0.10')" class="group relative flex flex-col items-center">
+          <button onclick="openZapSheet('${id}', '${pubkey}')" class="group relative flex flex-col items-center">
             <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-orange-600 to-yellow-500 p-0.5 shadow-lg shadow-orange-500/30 active:scale-95 transition">
               <div class="w-full h-full bg-black/50 rounded-full flex items-center justify-center backdrop-blur-sm">
-                <i data-lucide="flame" class="w-7 h-7 text-orange-400 fill-orange-400"></i>
+                <i data-lucide="zap" class="w-7 h-7 text-yellow-300 fill-yellow-300"></i>
               </div>
             </div>
-            <span id="tip-count-${id}" class="text-[11px] font-bold mt-1 text-orange-400 font-mono">
-              ${parseFloat(initialTips).toFixed(2)} €
-            </span>
+            <span id="tip-count-${id}" data-sats="0" class="text-[11px] font-bold mt-1 text-yellow-300 font-mono">0 ⚡</span>
           </button>
 
           <button onclick="sharePost('${id}')" class="flex flex-col items-center group">
             <div class="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-95 transition">
               <i data-lucide="share-2" class="w-5 h-5 text-zinc-300"></i>
             </div>
-            <span class="text-[10px] text-zinc-400 mt-1">Dalintis</span>
+            <span class="text-[10px] text-zinc-400 mt-1" data-i18n="share_label">Dalintis</span>
           </button>
         </div>
 
-        <!-- Aprašymas -->
         <div class="absolute left-4 bottom-24 right-20 z-20">
           <div class="flex items-center gap-2 mb-1">
             <span class="text-xs font-bold bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-md border border-orange-500/30 font-mono">
               @${shortPubkey}
             </span>
+            ${badge}
           </div>
           <p class="text-sm text-zinc-200 line-clamp-2 drop-shadow">${text || ''}</p>
         </div>
@@ -212,170 +469,357 @@
       if (window.lucide) lucide.createIcons();
     }
 
-    function connectNostrRelays() {
-      RELAYS.forEach(url => {
-        try {
-          const ws = new WebSocket(url);
-          ws.onopen = () => {
-            openSockets.push(ws);
-            ws.send(JSON.stringify(["REQ", "live_feed", { kinds: [1], limit: 30 }]));
-          };
-          ws.onmessage = (msg) => {
-            try {
-              const res = JSON.parse(msg.data);
-              if (res[0] === "EVENT" && res[2]) {
-                const ev = res[2];
-                const imgMatch = ev.content.match(/(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?|data:image\/[a-zA-Z]+;base64,[^\s]+)/i);
-                if (imgMatch) {
-                  createCardDOM('nostr-' + ev.id, ev.pubkey, imgMatch[0], ev.content.replace(imgMatch[0], '').trim());
-                }
+    // ĮKĖLIMAS & IMAGE COMPRESSION
+    function triggerUpload() { document.getElementById('file-input').click(); }
+
+    function compressImage(file, maxDimension = 1200, quality = 0.8) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width, height = img.height;
+            if (width > maxDimension || height > maxDimension) {
+              if (width > height) {
+                height = Math.round((height * maxDimension) / width);
+                width = maxDimension;
+              } else {
+                width = Math.round((width * maxDimension) / height);
+                height = maxDimension;
               }
-            } catch(e) {}
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', quality));
           };
-        } catch(e) {}
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
       });
     }
 
-    // --- UPLOAD ENGINE WITH CORS FALLBACK ---
-
-    function triggerUpload() {
-      document.getElementById('file-input').click();
-    }
-
-    function handleFileSelect(event) {
+    async function handleFileSelect(event) {
       const file = event.target.files[0];
       if (!file) return;
-
       selectedFile = file;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        previewDataUrl = e.target.result;
-        document.getElementById('upload-preview').src = previewDataUrl;
-        document.getElementById('upload-modal').classList.remove('hidden');
-        document.getElementById('upload-modal').classList.add('flex');
-      };
-      reader.readAsDataURL(file);
+      previewDataUrl = await compressImage(file);
+      document.getElementById('upload-preview').src = previewDataUrl;
+      showModal('upload-modal');
     }
 
     function closeUploadModal() {
-      document.getElementById('upload-modal').classList.add('hidden');
-      document.getElementById('upload-modal').classList.remove('flex');
+      hideModal('upload-modal');
       selectedFile = null;
       document.getElementById('file-input').value = '';
     }
 
     async function publishPost() {
       if (!selectedFile) return;
-
       const btn = document.getElementById('publish-btn');
       btn.disabled = true;
-      btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> <span>Ištransliuojama...</span>`;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> <span>${t('publishing')}</span>`;
       if (window.lucide) lucide.createIcons();
 
       let uploadedUrl = '';
-
       try {
-        // Bandome kelti į P2P CDN providerį
+        // Paverčiame suspaustą dataURL į blob kėlimui
+        const fetchRes = await fetch(previewDataUrl);
+        const blob = await fetchRes.blob();
         const formData = new FormData();
-        formData.append('file[]', selectedFile);
+        formData.append('file[]', blob, 'upload.jpg');
 
-        const response = await fetch('https://nostr.build/api/v2/upload/files', {
-          method: 'POST',
-          body: formData
-        });
-
+        const response = await fetch('https://nostr.build/api/v2/upload/files', { method: 'POST', body: formData });
         if (response.ok) {
           const data = await response.json();
-          if (data && data.data && data.data[0] && data.data[0].url) {
-            uploadedUrl = data.data[0].url;
-          }
+          if (data && data.data && data.data[0] && data.data[0].url) uploadedUrl = data.data[0].url;
         }
       } catch (err) {
-        console.warn('Remote upload unavailable (CORS/File Origin), fallbacks to Local Data Stream:', err);
+        console.warn('Nuotolinis upload nepasiekiamas (CORS), fallback į duomenų srautą:', err);
       }
-
-      // Jei CORS arba tinklas užblokuoja išorinius serverius, naudojame tiesioginį Data Stream
-      if (!uploadedUrl) {
-        uploadedUrl = previewDataUrl;
-      }
+      if (!uploadedUrl) uploadedUrl = previewDataUrl;
 
       const caption = document.getElementById('upload-caption').value.trim();
       const fullContent = `${caption} ${uploadedUrl}`.trim();
 
-      // Sukuriame Nostr Event (Kind 1)
-      const event = {
+      const tags = [['t', 'hypefeed']];
+      if (userGeohash) tags.push(['g', userGeohash]);
+
+      let event = {
         kind: 1,
-        pubkey: userKeys.pub,
         created_at: Math.floor(Date.now() / 1000),
-        tags: [["t", "hypefeed"]],
+        tags,
         content: fullContent
       };
+      event = await signEventCompat(event);
 
-      // Pasirašymas
-      try {
-        if (window.NostrTools && typeof NostrTools.finishEvent === 'function') {
-          NostrTools.finishEvent(event, userKeys.pk);
-        } else if (window.NostrTools && typeof NostrTools.getEventHash === 'function') {
-          event.id = NostrTools.getEventHash(event);
-          event.sig = NostrTools.signEvent(event, userKeys.pk);
-        }
-      } catch(e) {
-        event.id = 'loc-' + Date.now();
-      }
+      const message = JSON.stringify(['EVENT', event]);
+      openSockets.forEach(ws => { if (ws.readyState === WebSocket.OPEN) ws.send(message); });
 
-      // Išsiunčiame į P2P tinklą
-      const message = JSON.stringify(["EVENT", event]);
-      openSockets.forEach(ws => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(message);
-        }
-      });
+      createCardDOM('local-' + Date.now(), userKeys.pub, uploadedUrl, caption, true, !!userGeohash);
 
-      // Momentinis atvaizdavimas viršuje
-      createCardDOM('local-' + Date.now(), userKeys.pub, uploadedUrl, caption, true);
-
-      // Uždarome modalą
       closeUploadModal();
       document.getElementById('upload-caption').value = '';
-
       btn.disabled = false;
-      btn.innerHTML = `<i data-lucide="send" class="w-5 h-5"></i> <span>Ištransliuoti į P2P tinklą</span>`;
+      btn.innerHTML = `<i data-lucide="send" class="w-5 h-5"></i> <span>${t('publish_btn')}</span>`;
       if (window.lucide) lucide.createIcons();
     }
 
-    function handleTip(postId, amount) {
-      const numericAmount = parseFloat(amount);
-      let userBalance = parseFloat(localStorage.getItem('user_wallet_balance') || '5.00');
-
-      if (userBalance < numericAmount) {
-        alert('Nepakanka lėšų!');
-        return;
-      }
-
-      userBalance -= numericAmount;
-      localStorage.setItem('user_wallet_balance', userBalance.toFixed(2));
-      document.getElementById('balance-display').innerText = `${userBalance.toFixed(2)} €`;
-
-      let postTips = parseFloat(localStorage.getItem(`post_tips_${postId}`) || '0.00');
-      postTips += numericAmount;
-      localStorage.setItem(`post_tips_${postId}`, postTips.toFixed(2));
-
-      const postTipEl = document.getElementById(`tip-count-${postId}`);
-      if (postTipEl) postTipEl.innerText = `${postTips.toFixed(2)} €`;
-
-      if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+    function sharePost(id) {
+      const url = `${location.href.split('#')[0]}#${id}`;
+      if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+      toast(t('share_toast'));
     }
 
-    function sharePost(id) { alert('Nuoroda nukopijuota!'); }
-    function toggleWalletModal() { alert('Piniginės balansas & Nostr raktai.'); }
+    // PROFILIO PAIEŠKA
+    function fetchProfile(pubkey) {
+      if (profileCache.has(pubkey)) return Promise.resolve(profileCache.get(pubkey));
+      return new Promise((resolve) => {
+        const subId = 'profile_' + pubkey.substring(0, 10) + '_' + Date.now();
+        const filter = { kinds: [0], authors: [pubkey], limit: 5 };
+        pendingResolvers[subId] = { events: [], filter };
+        openSockets.forEach(ws => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(['REQ', subId, filter]));
+        });
+        setTimeout(() => {
+          const bucket = pendingResolvers[subId];
+          delete pendingResolvers[subId];
+          openSockets.forEach(ws => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(['CLOSE', subId])); });
+          let lud16 = null;
+          if (bucket && bucket.events.length) {
+            bucket.events.sort((a, b) => b.created_at - a.created_at);
+            try { lud16 = JSON.parse(bucket.events[0].content).lud16 || null; } catch (e) {}
+          }
+          profileCache.set(pubkey, lud16);
+          resolve(lud16);
+        }, 2500);
+      });
+    }
 
-    // Startas
-    window.addEventListener('DOMContentLoaded', () => {
-      initIdentity();
-      connectNostrRelays();
+    async function publishProfileMetadata(lud16) {
+      let event = {
+        kind: 0,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [],
+        content: JSON.stringify({ lud16 })
+      };
+      event = await signEventCompat(event);
+      const message = JSON.stringify(['EVENT', event]);
+      openSockets.forEach(ws => { if (ws.readyState === WebSocket.OPEN) ws.send(message); });
+      profileCache.set(userKeys.pub, lud16);
+    }
 
-      const savedBal = localStorage.getItem('user_wallet_balance') || '5.00';
-      document.getElementById('balance-display').innerText = `${parseFloat(savedBal).toFixed(2)} €`;
+    // NIP-57 LIGHTNING ZAPS
+    async function buildZapRequest(recipientPubkey, amountSats, comment, eventId) {
+      const tags = [
+        ['relays', ...RELAYS],
+        ['amount', String(amountSats * 1000)],
+        ['p', recipientPubkey]
+      ];
+      if (eventId) tags.push(['e', eventId]);
+      let event = {
+        kind: 9734,
+        created_at: Math.floor(Date.now() / 1000),
+        tags,
+        content: comment || ''
+      };
+      return await signEventCompat(event);
+    }
+
+    async function requestInvoice(lud16, amountSats, zapRequestEvent) {
+      const [name, domain] = lud16.split('@');
+      if (!name || !domain) throw new Error('Neteisingas Lightning adresas');
+      const lnurlEndpoint = `https://${domain}/.well-known/lnurlp/${name}`;
+      const res = await fetch(lnurlEndpoint);
+      const lnurlData = await res.json();
+      if (!lnurlData.callback) throw new Error('LNURL serveris negrąžino callback');
+
+      const amountMsat = amountSats * 1000;
+      const params = new URLSearchParams();
+      params.set('amount', amountMsat);
+      if (lnurlData.allowsNostr) {
+        params.set('nostr', JSON.stringify(zapRequestEvent));
+        params.set('lnurl', lnurlEndpoint);
+      }
+      const sep = lnurlData.callback.includes('?') ? '&' : '?';
+      const invoiceRes = await fetch(`${lnurlData.callback}${sep}${params.toString()}`);
+      const invoiceData = await invoiceRes.json();
+      if (!invoiceData.pr) throw new Error('Serveris negrąžino sąskaitos (invoice)');
+      return invoiceData.pr;
+    }
+
+    function handleZapReceipt(ev) {
+      if (processedZapReceipts.has(ev.id)) return;
+      processedZapReceipts.add(ev.id);
+      try {
+        const descTag = ev.tags.find(tag => tag[0] === 'description');
+        if (!descTag) return;
+        const zapReq = JSON.parse(descTag[1]);
+        const amountTag = (zapReq.tags || []).find(tag => tag[0] === 'amount');
+        const sats = amountTag ? Math.round(parseInt(amountTag[1], 10) / 1000) : 0;
+        if (!sats) return;
+
+        totalReceivedSats += sats;
+        updateBalanceDisplay();
+
+        const eTag = ev.tags.find(tag => tag[0] === 'e');
+        if (eTag) {
+          const tipEl = document.getElementById(`tip-count-nostr-${eTag[1]}`);
+          if (tipEl) {
+            const updated = parseInt(tipEl.dataset.sats || '0', 10) + sats;
+            tipEl.dataset.sats = updated;
+            tipEl.innerText = `${updated} ⚡`;
+          }
+        }
+      } catch (e) { console.warn('Nepavyko apdoroti zap receipt', e); }
+    }
+
+    function updateBalanceDisplay() {
+      document.getElementById('balance-display').innerText = `${totalReceivedSats} ⚡`;
+    }
+
+    async function openZapSheet(postId, authorPubkey) {
+      currentZapTarget = { postId, authorPubkey };
+      const body = document.getElementById('zap-body');
+      body.innerHTML = `<p class="text-zinc-400 text-sm">${t('zap_resolving')}</p>`;
+      showModal('zap-modal');
+
+      const lud16 = await fetchProfile(authorPubkey);
+      if (!lud16) {
+        body.innerHTML = `<p class="text-zinc-400 text-sm">${t('zap_no_lud16')}</p>`;
+        return;
+      }
+      currentZapTarget.lud16 = lud16;
+      renderZapAmountPicker();
+    }
+
+    function closeZapSheet() { hideModal('zap-modal'); }
+
+    function renderZapAmountPicker() {
+      const body = document.getElementById('zap-body');
+      const amounts = [21, 100, 500, 1000];
+      body.innerHTML = `
+        <div class="grid grid-cols-4 gap-2 w-full">
+          ${amounts.map(a => `<button onclick="selectZapAmount(${a})" class="zap-amount-btn py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm font-bold text-yellow-300 active:scale-95">${a}</button>`).join('')}
+        </div>
+        <input id="zap-custom-amount" type="number" min="1" placeholder="Custom sats" class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white mt-2 focus:outline-none focus:border-orange-500" />
+        <button onclick="confirmZap()" class="w-full py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black mt-2 flex items-center justify-center gap-2 active:scale-95 transition">
+          <i data-lucide="zap" class="w-5 h-5"></i><span>${t('zap_send')}</span>
+        </button>
+      `;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    function selectZapAmount(a) {
+      selectedZapAmount = a;
+      const custom = document.getElementById('zap-custom-amount');
+      if (custom) custom.value = '';
+    }
+
+    async function confirmZap() {
+      const customInput = document.getElementById('zap-custom-amount');
+      const customVal = customInput ? parseInt(customInput.value || '', 10) : NaN;
+      const amount = customVal > 0 ? customVal : selectedZapAmount;
+      const body = document.getElementById('zap-body');
+      body.innerHTML = `<p class="text-zinc-400 text-sm">${t('zap_invoice_loading')}</p>`;
+
+      try {
+        const eventId = currentZapTarget.postId.startsWith('nostr-') ? currentZapTarget.postId.slice(7) : null;
+        const zapReq = await buildZapRequest(currentZapTarget.authorPubkey, amount, '', eventId);
+        const invoice = await requestInvoice(currentZapTarget.lud16, amount, zapReq);
+        renderInvoice(invoice);
+      } catch (e) {
+        console.warn('Zap klaida:', e);
+        body.innerHTML = `<p class="text-red-400 text-sm">${t('zap_error')}</p>`;
+      }
+    }
+
+    function renderInvoice(invoice) {
+      const body = document.getElementById('zap-body');
+      body.innerHTML = `
+        <div class="bg-white p-3 rounded-xl flex items-center justify-center"><div id="zap-qr"></div></div>
+        <p class="text-xs text-zinc-500">${t('zap_or_scan')}</p>
+        <button id="copy-invoice-btn" class="text-xs text-orange-400 underline">${t('zap_copy')}</button>
+        <button id="webln-pay-btn" class="w-full py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black mt-2 active:scale-95 transition">${t('zap_pay_with_ext')}</button>
+      `;
+      if (window.QRCode) {
+        new QRCode(document.getElementById('zap-qr'), { text: 'lightning:' + invoice, width: 180, height: 180 });
+      }
+      document.getElementById('copy-invoice-btn').onclick = () => {
+        navigator.clipboard?.writeText(invoice).catch(() => {});
+        toast(t('zap_copy'));
+      };
+      document.getElementById('webln-pay-btn').onclick = () => payWithWebLN(invoice, false);
+      if (window.webln) payWithWebLN(invoice, true);
+    }
+
+    async function payWithWebLN(invoice, silent) {
+      if (!window.webln) {
+        if (!silent) alert('WebLN piniginė (pvz. Alby) nerasta.');
+        return;
+      }
+      try {
+        await window.webln.enable();
+        await window.webln.sendPayment(invoice);
+        if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+        closeZapSheet();
+      } catch (e) { console.warn('WebLN mokėjimas atšauktas', e); }
+    }
+
+    // PINIGINĖS MODALAS
+    async function openWalletModal() {
+      document.getElementById('wallet-npub').innerText = getNpub();
+      document.getElementById('lud16-input').value = localStorage.getItem('hype_lud16') || '';
+      document.getElementById('ext-status').innerText = usingExtension ? t('using_extension') : '';
+      showModal('wallet-modal');
+    }
+    function closeWalletModal() { hideModal('wallet-modal'); }
+
+    function saveLud16() {
+      const val = document.getElementById('lud16-input').value.trim();
+      if (!val || !val.includes('@')) return;
+      localStorage.setItem('hype_lud16', val);
+      publishProfileMetadata(val);
+      const status = document.getElementById('lud16-status');
+      status.innerText = t('lud16_saved');
+      setTimeout(() => { status.innerText = ''; }, 2000);
+    }
+
+    // UI HELPERIAI
+    function showModal(id) { const el = document.getElementById(id); el.classList.remove('hidden'); el.classList.add('flex'); }
+    function hideModal(id) { const el = document.getElementById(id); el.classList.add('hidden'); el.classList.remove('flex'); }
+
+    function toast(msg) {
+      let el = document.getElementById('toast');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'toast';
+        el.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-black/80 text-white text-xs px-4 py-2 rounded-full z-[200] pointer-events-none transition-opacity duration-300';
+        document.body.appendChild(el);
+      }
+      el.innerText = msg;
+      el.style.opacity = '1';
+      clearTimeout(el._t);
+      el._t = setTimeout(() => { el.style.opacity = '0'; }, 2000);
+    }
+
+    // STARTAS
+    window.addEventListener('DOMContentLoaded', async () => {
+      lucide.createIcons();
+
+      await initIdentity();
+      applyAutoLanguage();
+      userGeohash = await tryGetAutoLocation();
+      openRelayConnections();
+
+      const ownLud16 = await fetchProfile(userKeys.pub);
+      if (ownLud16) {
+        localStorage.setItem('hype_lud16', ownLud16);
+      }
+
+      updateBalanceDisplay();
     });
   </script>
 </body>
