@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="lt">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Hype Feed // Pure P2P Stream</title>
 
-  <!-- CDN Bibliotekos -->
+  <!-- CDN Libraries -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://unpkg.com/nostr-tools@1.17.0/lib/nostr.bundle.js"></script>
@@ -27,39 +27,54 @@
       overflow-y: scroll;
       scroll-snap-type: y mandatory;
       -webkit-overflow-scrolling: touch;
+      will-change: scroll-position;
     }
 
     .feed-card {
       height: 100vh;
       height: 100dvh;
       scroll-snap-align: start;
-      scroll-snap-stop: normal;
+      scroll-snap-stop: always;
       position: relative;
       width: 100%;
       flex-shrink: 0;
+      contain: strict;
+    }
+
+    /* Skeleton image loader */
+    .img-loader {
+      background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+      background-size: 200% 100%;
+      animation: loading 1.5s infinite;
+    }
+
+    @keyframes loading {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
     }
   </style>
 </head>
-<body class="select-none font-sans">
+<body class="select-none font-sans bg-zinc-950 text-white">
 
   <!-- TOP BAR -->
-  <header class="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent backdrop-blur-xs pointer-events-none">
+  <header class="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
     <div class="flex items-center gap-2 pointer-events-auto">
-      <span id="net-indicator" class="w-3 h-3 rounded-full bg-orange-500 animate-pulse"></span>
+      <span id="net-indicator" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
       <h1 class="font-extrabold tracking-wider text-sm bg-gradient-to-r from-orange-400 to-yellow-300 bg-clip-text text-transparent">
         HYPE FEED
       </h1>
+      <span id="feed-mode-tag" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-zinc-400">GLOBAL</span>
     </div>
 
-    <div class="flex items-center gap-3 pointer-events-auto">
+    <div class="flex items-center gap-2.5 pointer-events-auto">
       <!-- Balance Display -->
-      <button onclick="openWalletModal()" class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 active:scale-95 transition">
+      <button onclick="openWalletModal()" class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/10 active:scale-95 transition">
         <i data-lucide="zap" class="w-3.5 h-3.5 text-yellow-400 fill-yellow-400"></i>
         <span id="balance-display" class="text-xs font-mono font-bold text-yellow-300">0 ⚡</span>
       </button>
 
       <!-- Identity Preview -->
-      <button onclick="openWalletModal()" class="text-[10px] font-mono text-zinc-400 px-2 py-1 rounded bg-black/40 border border-white/5">
+      <button onclick="openWalletModal()" class="text-[10px] font-mono text-zinc-400 px-2.5 py-1 rounded-full bg-black/50 backdrop-blur-md border border-white/10">
         <span id="pubkey-preview">...</span>
       </button>
     </div>
@@ -68,38 +83,38 @@
   <!-- FEED CONTAINER -->
   <main id="feed-container" class="feed-viewport w-full">
     <div id="empty-state" class="h-full w-full flex flex-col items-center justify-center p-6 text-center">
-      <i data-lucide="radio" class="w-12 h-12 text-orange-500 animate-pulse mb-3"></i>
-      <p class="text-zinc-400 text-sm" data-i18n="empty_searching">Ieškoma gyvų P2P postų tinkle...</p>
-      <p class="text-zinc-600 text-xs mt-1" data-i18n="empty_hint">Būk pirmas ir įkelk nuotrauką paspaudęs „+“</p>
+      <i data-lucide="radio" class="w-10 h-10 text-orange-500 animate-pulse mb-3"></i>
+      <p class="text-zinc-400 text-sm">Connecting to P2P network...</p>
+      <p class="text-zinc-600 text-xs mt-1">If local feed is empty, global posts will load automatically</p>
     </div>
   </main>
 
   <!-- UPLOAD MODAL -->
   <div id="upload-modal" class="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md hidden flex-col justify-between p-6">
     <div class="flex justify-between items-center">
-      <h2 class="text-lg font-bold text-orange-400" data-i18n="new_post_title">Naujas P2P Įrašas</h2>
+      <h2 class="text-base font-bold text-orange-400">New P2P Broadcast</h2>
       <button onclick="closeUploadModal()" class="text-zinc-400 hover:text-white p-2">
         <i data-lucide="x" class="w-6 h-6"></i>
       </button>
     </div>
 
     <div class="my-auto flex flex-col items-center gap-4 w-full max-w-md mx-auto">
-      <div class="w-full max-h-[50vh] rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex items-center justify-center p-2">
+      <div class="w-full max-h-[48vh] rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex items-center justify-center p-1">
         <img id="upload-preview" src="" alt="Preview" class="max-h-[45vh] w-auto object-contain rounded-lg" />
       </div>
-      <input type="text" id="upload-caption" data-i18n-placeholder="caption_placeholder" placeholder="Įrašyk aprašymą / hashtag..." class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500" />
+      <input type="text" id="upload-caption" placeholder="Write a caption or hashtags..." class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500 font-sans" />
     </div>
 
     <button id="publish-btn" onclick="publishPost()" class="w-full max-w-md mx-auto py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black active:scale-95 transition flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20">
       <i data-lucide="send" class="w-5 h-5"></i>
-      <span data-i18n="publish_btn">Ištransliuoti į P2P tinklą</span>
+      <span>Broadcast Stream</span>
     </button>
   </div>
 
-  <!-- ZAP MODAL (NIP-57) -->
+  <!-- ZAP MODAL -->
   <div id="zap-modal" class="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md hidden flex-col justify-between p-6">
     <div class="flex justify-between items-center">
-      <h2 class="text-lg font-bold text-orange-400" data-i18n="zap_title">Paremti ⚡ Zap</h2>
+      <h2 class="text-base font-bold text-orange-400">Support Creator ⚡ Zap</h2>
       <button onclick="closeZapSheet()" class="text-zinc-400 hover:text-white p-2">
         <i data-lucide="x" class="w-6 h-6"></i>
       </button>
@@ -108,33 +123,33 @@
     <div></div>
   </div>
 
-  <!-- WALLET / SETTINGS MODAL -->
+  <!-- WALLET & SETTINGS MODAL -->
   <div id="wallet-modal" class="fixed inset-0 z-[110] bg-black/95 backdrop-blur-md hidden flex-col justify-between p-6">
     <div class="flex justify-between items-center">
-      <h2 class="text-lg font-bold text-orange-400" data-i18n="wallet_title">Piniginė</h2>
+      <h2 class="text-base font-bold text-orange-400">Node Identity & Wallet</h2>
       <button onclick="closeWalletModal()" class="text-zinc-400 hover:text-white p-2">
         <i data-lucide="x" class="w-6 h-6"></i>
       </button>
     </div>
     <div class="my-auto flex flex-col gap-4 w-full max-w-md mx-auto">
-      <div id="ext-status" class="text-[11px] text-zinc-500"></div>
+      <div id="ext-status" class="text-[11px] text-zinc-500 font-mono"></div>
       <div class="text-xs font-mono text-zinc-400 break-all bg-zinc-900 rounded-lg p-3 border border-white/10">
-        <div class="text-zinc-500 mb-1">Public key</div>
-        <div id="wallet-npub">...</div>
+        <div class="text-zinc-500 mb-1">Public Key (npub / hex)</div>
+        <div id="wallet-npub" class="select-all">...</div>
       </div>
       <div>
-        <label class="text-xs text-zinc-400 block mb-1" data-i18n="lud16_label">Lightning adresas (gauti Zaps)</label>
+        <label class="text-xs text-zinc-400 block mb-1">Lightning Address (to receive Zaps)</label>
         <div class="flex gap-2">
           <input id="lud16-input" type="text" placeholder="you@getalby.com" class="flex-1 px-3 py-2 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white focus:outline-none focus:border-orange-500" />
-          <button onclick="saveLud16()" class="px-4 py-2 rounded-lg bg-orange-500 text-black text-sm font-bold" data-i18n="lud16_save">Išsaugoti</button>
+          <button onclick="saveLud16()" class="px-4 py-2 rounded-lg bg-orange-500 text-black text-sm font-bold active:scale-95 transition">Save</button>
         </div>
-        <div id="lud16-status" class="text-[11px] text-emerald-400 mt-1 h-4"></div>
+        <div id="lud16-status" class="text-[11px] text-emerald-400 mt-1 h-4 font-mono"></div>
       </div>
-      <button onclick="resetIdentity()" class="text-xs text-red-400 underline mt-4 text-left" data-i18n="new_identity">Naujas tapatumas</button>
+      <button onclick="resetIdentity()" class="text-xs text-red-400 underline mt-4 text-left">Generate new identity keypair</button>
     </div>
   </div>
 
-  <!-- FLOATING ACTION BUTTON (UPLOAD) -->
+  <!-- FLOATING ACTION BUTTON -->
   <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30">
     <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileSelect(event)" />
     <button onclick="triggerUpload()" class="w-14 h-14 rounded-full bg-gradient-to-tr from-orange-500 to-yellow-400 p-0.5 shadow-xl shadow-orange-500/20 active:scale-90 transition">
@@ -151,67 +166,13 @@
       'wss://purplerelay.com'
     ];
     const GEOHASH_PRECISION = 5;
+    const MAX_DOM_CARDS = 40; // Prevents memory leak & crashes
 
-    const I18N = {
-      lt: {
-        empty_searching: 'Ieškoma gyvų P2P postų tinkle...',
-        empty_hint: 'Būk pirmas ir įkelk nuotrauką paspaudęs „+“',
-        new_post_title: 'Naujas P2P Įrašas',
-        caption_placeholder: 'Įrašyk aprašymą / hashtag...',
-        publish_btn: 'Ištransliuoti į P2P tinklą',
-        publishing: 'Ištransliuojama...',
-        share_toast: 'Nuoroda nukopijuota!',
-        wallet_title: 'Piniginė',
-        zap_title: 'Paremti ⚡ Zap',
-        zap_send: 'Siųsti Zap',
-        zap_resolving: 'Ieškoma gavėjo Lightning adreso...',
-        zap_no_lud16: 'Autorius dar nepridėjo Lightning adreso.',
-        zap_invoice_loading: 'Generuojama sąskaita...',
-        zap_pay_with_ext: 'Apmokėti su pinigine',
-        zap_or_scan: 'arba nuskenuok QR kodą',
-        zap_error: 'Nepavyko sukurti Zap užklausos (LNURL serveris gali neturėti CORS).',
-        zap_copy: 'Kopijuoti invoice',
-        lud16_label: 'Lightning adresas (gauti Zaps)',
-        lud16_save: 'Išsaugoti',
-        lud16_saved: 'Išsaugota',
-        new_identity: 'Naujas tapatumas',
-        using_extension: 'Prisijungta per Nostr plėtinį (NIP-07)',
-        local_badge: 'vietinis'
-      },
-      en: {
-        empty_searching: 'Searching for live P2P posts...',
-        empty_hint: 'Be the first — upload a photo with "+"',
-        new_post_title: 'New P2P Post',
-        caption_placeholder: 'Write a caption / hashtag...',
-        publish_btn: 'Broadcast to P2P network',
-        publishing: 'Broadcasting...',
-        share_toast: 'Link copied!',
-        wallet_title: 'Wallet',
-        zap_title: 'Support ⚡ Zap',
-        zap_send: 'Send Zap',
-        zap_resolving: 'Looking up recipient Lightning address...',
-        zap_no_lud16: "Author hasn't added a Lightning address yet.",
-        zap_invoice_loading: 'Generating invoice...',
-        zap_pay_with_ext: 'Pay with wallet extension',
-        zap_or_scan: 'or scan the QR code',
-        zap_error: 'Failed to create Zap request (LNURL server may lack CORS).',
-        zap_copy: 'Copy invoice',
-        lud16_label: 'Lightning address (receive Zaps)',
-        lud16_save: 'Save',
-        lud16_saved: 'Saved',
-        new_identity: 'New identity',
-        using_extension: 'Connected via Nostr extension (NIP-07)',
-        local_badge: 'local'
-      }
-    };
-    let currentLang = 'lt';
-    function t(key) { return (I18N[currentLang] && I18N[currentLang][key]) || I18N.lt[key] || key; }
-
-    // BŪSENA
     let userKeys = { pk: '', pub: '' };
     let usingExtension = false;
     let userGeohash = null;
     let loadedPostIds = new Set();
+    let cardOrderArray = [];
     let selectedFile = null;
     let previewDataUrl = '';
     let openSockets = [];
@@ -222,20 +183,12 @@
     let currentZapTarget = null;
     let selectedZapAmount = 100;
 
-    // CONVERTERS
     function hexToBytes(hex) {
       let bytes = new Uint8Array(hex.length / 2);
       for (let i = 0; i < bytes.length; i++) {
         bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
       }
       return bytes;
-    }
-
-    function applyAutoLanguage() {
-      const browserLang = (navigator.language || 'lt').slice(0, 2).toLowerCase();
-      currentLang = I18N[browserLang] ? browserLang : 'lt';
-      document.querySelectorAll('[data-i18n]').forEach(el => { el.innerText = t(el.dataset.i18n); });
-      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
     }
 
     // GEOHASH
@@ -260,16 +213,16 @@
     function tryGetAutoLocation() {
       return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
-        const timer = setTimeout(() => resolve(null), 4000);
+        const timer = setTimeout(() => resolve(null), 3000);
         navigator.geolocation.getCurrentPosition(
           (pos) => { clearTimeout(timer); resolve(encodeGeohash(pos.coords.latitude, pos.coords.longitude, GEOHASH_PRECISION)); },
           () => { clearTimeout(timer); resolve(null); },
-          { enableHighAccuracy: false, timeout: 3500, maximumAge: 600000 }
+          { enableHighAccuracy: false, timeout: 2800, maximumAge: 600000 }
         );
       });
     }
 
-    // TAPATYBĖ
+    // IDENTITY MANAGEMENT
     function randomHex32() {
       return Array.from(crypto.getRandomValues(new Uint8Array(32))).map(b => b.toString(16).padStart(2, '0')).join('');
     }
@@ -303,7 +256,7 @@
       event.pubkey = userKeys.pub;
       if (usingExtension && window.nostr) {
         try { return await window.nostr.signEvent(event); }
-        catch (e) { console.warn('NIP-07 pasirašymas nepavyko, bandau lokaliai', e); }
+        catch (e) { console.warn('Extension sign failed, falling back to local key', e); }
       }
       try {
         const pkBytes = hexToBytes(userKeys.pk);
@@ -329,13 +282,13 @@
     }
 
     function resetIdentity() {
-      if (!confirm('Ištrinti dabartinį tapatumą ir sukurti naują? Šis veiksmas negrįžtamas.')) return;
+      if (!confirm('Are you sure you want to reset your identity keys? This action cannot be undone.')) return;
       localStorage.removeItem('hype_priv_key');
       localStorage.removeItem('hype_lud16');
       location.reload();
     }
 
-    // RELAY VALDYMAS
+    // RELAYS
     function openRelayConnections() {
       RELAYS.forEach(url => connectRelay(url, 0));
     }
@@ -364,14 +317,20 @@
     }
 
     function subscribeFeed(ws) {
-      const filters = [{ kinds: [1], '#t': ['hypefeed'], limit: 30 }];
-      if (userGeohash) filters.push({ kinds: [1], '#g': [userGeohash], limit: 30 });
+      // Primary search for HypeFeed tag + Local Geohash if present
+      const filters = [
+        { kinds: [1], '#t': ['hypefeed'], limit: 30 }
+      ];
+      if (userGeohash) {
+        filters.push({ kinds: [1], '#g': [userGeohash], limit: 20 });
+        document.getElementById('feed-mode-tag').innerText = 'LOCAL + GLOBAL';
+      }
       ws.send(JSON.stringify(['REQ', 'live_feed', ...filters]));
     }
 
     function subscribeZapReceipts(ws) {
       if (!userKeys.pub) return;
-      ws.send(JSON.stringify(['REQ', 'zap_receipts', { kinds: [9735], '#p': [userKeys.pub], limit: 200 }]));
+      ws.send(JSON.stringify(['REQ', 'zap_receipts', { kinds: [9735], '#p': [userKeys.pub], limit: 100 }]));
     }
 
     function flushPendingProfileRequests(ws) {
@@ -398,12 +357,23 @@
       }
     }
 
-    // FEED
+    // FEED & DOM OPTIMIZATION (Prevent Memory Leak)
     function handleFeedEvent(ev) {
       const imgMatch = ev.content.match(/(https?:\/\/[^\s]+?\.(?:png|jpg|jpeg|gif|webp)(?:\?[^\s]*)?|data:image\/[a-zA-Z]+;base64,[^\s]+)/i);
       if (!imgMatch) return;
       const isLocal = !!(userGeohash && ev.tags.some(tag => tag[0] === 'g' && tag[1] === userGeohash));
       createCardDOM('nostr-' + ev.id, ev.pubkey, imgMatch[0], ev.content.replace(imgMatch[0], '').trim(), false, isLocal);
+    }
+
+    function pruneOldCards() {
+      if (cardOrderArray.length <= MAX_DOM_CARDS) return;
+      const removeCount = cardOrderArray.length - MAX_DOM_CARDS;
+      for (let i = 0; i < removeCount; i++) {
+        const oldId = cardOrderArray.shift();
+        loadedPostIds.delete(oldId);
+        const el = document.getElementById(oldId);
+        if (el) el.remove();
+      }
     }
 
     function createCardDOM(id, pubkey, mediaUrl, text, isPrepend, isLocal) {
@@ -419,16 +389,19 @@
       card.id = id;
 
       const shortPubkey = pubkey ? pubkey.substring(0, 8) : 'anon';
-      const badge = isLocal ? `<span class="text-[10px] text-emerald-400 ml-1">📍 ${t('local_badge')}</span>` : '';
+      const badge = isLocal ? `<span class="text-[10px] text-emerald-400 ml-1">📍 Local</span>` : '';
 
       card.innerHTML = `
+        <div class="absolute inset-0 img-loader"></div>
         <img src="${mediaUrl}"
              alt="Stream Visual"
-             class="w-full h-full object-cover"
+             class="w-full h-full object-cover relative z-10 opacity-0 transition-opacity duration-300"
              loading="lazy"
+             decoding="async"
+             onload="this.classList.remove('opacity-0')"
              onerror="this.parentElement.remove()" />
 
-        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80 pointer-events-none"></div>
+        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/80 z-10 pointer-events-none"></div>
 
         <div class="absolute right-4 bottom-28 flex flex-col gap-6 items-center z-20">
           <button onclick="openZapSheet('${id}', '${pubkey}')" class="group relative flex flex-col items-center">
@@ -444,7 +417,7 @@
             <div class="w-12 h-12 rounded-full bg-black/40 backdrop-blur-md border border-white/10 flex items-center justify-center active:scale-95 transition">
               <i data-lucide="share-2" class="w-5 h-5 text-zinc-300"></i>
             </div>
-            <span class="text-[10px] text-zinc-400 mt-1" data-i18n="share_label">Dalintis</span>
+            <span class="text-[10px] text-zinc-400 mt-1">Share</span>
           </button>
         </div>
 
@@ -461,15 +434,18 @@
 
       if (isPrepend && container.firstChild) {
         container.insertBefore(card, container.firstChild);
+        cardOrderArray.unshift(id);
         container.scrollTop = 0;
       } else {
         container.appendChild(card);
+        cardOrderArray.push(id);
       }
 
+      pruneOldCards();
       if (window.lucide) lucide.createIcons();
     }
 
-    // ĮKĖLIMAS & IMAGE COMPRESSION
+    // UPLOAD & IMAGE COMPRESSION
     function triggerUpload() { document.getElementById('file-input').click(); }
 
     function compressImage(file, maxDimension = 1200, quality = 0.8) {
@@ -520,12 +496,11 @@
       if (!selectedFile) return;
       const btn = document.getElementById('publish-btn');
       btn.disabled = true;
-      btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> <span>${t('publishing')}</span>`;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> <span>Broadcasting...</span>`;
       if (window.lucide) lucide.createIcons();
 
       let uploadedUrl = '';
       try {
-        // Paverčiame suspaustą dataURL į blob kėlimui
         const fetchRes = await fetch(previewDataUrl);
         const blob = await fetchRes.blob();
         const formData = new FormData();
@@ -537,7 +512,7 @@
           if (data && data.data && data.data[0] && data.data[0].url) uploadedUrl = data.data[0].url;
         }
       } catch (err) {
-        console.warn('Nuotolinis upload nepasiekiamas (CORS), fallback į duomenų srautą:', err);
+        console.warn('Remote upload unreachable, falling back to data URL payload:', err);
       }
       if (!uploadedUrl) uploadedUrl = previewDataUrl;
 
@@ -563,22 +538,22 @@
       closeUploadModal();
       document.getElementById('upload-caption').value = '';
       btn.disabled = false;
-      btn.innerHTML = `<i data-lucide="send" class="w-5 h-5"></i> <span>${t('publish_btn')}</span>`;
+      btn.innerHTML = `<i data-lucide="send" class="w-5 h-5"></i> <span>Broadcast Stream</span>`;
       if (window.lucide) lucide.createIcons();
     }
 
     function sharePost(id) {
       const url = `${location.href.split('#')[0]}#${id}`;
       if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
-      toast(t('share_toast'));
+      toast('Link copied to clipboard!');
     }
 
-    // PROFILIO PAIEŠKA
+    // PROFILE FETCHING
     function fetchProfile(pubkey) {
       if (profileCache.has(pubkey)) return Promise.resolve(profileCache.get(pubkey));
       return new Promise((resolve) => {
-        const subId = 'profile_' + pubkey.substring(0, 10) + '_' + Date.now();
-        const filter = { kinds: [0], authors: [pubkey], limit: 5 };
+        const subId = 'prof_' + pubkey.substring(0, 8) + '_' + Date.now();
+        const filter = { kinds: [0], authors: [pubkey], limit: 1 };
         pendingResolvers[subId] = { events: [], filter };
         openSockets.forEach(ws => {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(['REQ', subId, filter]));
@@ -594,7 +569,7 @@
           }
           profileCache.set(pubkey, lud16);
           resolve(lud16);
-        }, 2500);
+        }, 2000);
       });
     }
 
@@ -611,7 +586,7 @@
       profileCache.set(userKeys.pub, lud16);
     }
 
-    // NIP-57 LIGHTNING ZAPS
+    // NIP-57 ZAPS
     async function buildZapRequest(recipientPubkey, amountSats, comment, eventId) {
       const tags = [
         ['relays', ...RELAYS],
@@ -630,11 +605,11 @@
 
     async function requestInvoice(lud16, amountSats, zapRequestEvent) {
       const [name, domain] = lud16.split('@');
-      if (!name || !domain) throw new Error('Neteisingas Lightning adresas');
+      if (!name || !domain) throw new Error('Invalid Lightning address');
       const lnurlEndpoint = `https://${domain}/.well-known/lnurlp/${name}`;
       const res = await fetch(lnurlEndpoint);
       const lnurlData = await res.json();
-      if (!lnurlData.callback) throw new Error('LNURL serveris negrąžino callback');
+      if (!lnurlData.callback) throw new Error('LNURL callback missing');
 
       const amountMsat = amountSats * 1000;
       const params = new URLSearchParams();
@@ -646,7 +621,7 @@
       const sep = lnurlData.callback.includes('?') ? '&' : '?';
       const invoiceRes = await fetch(`${lnurlData.callback}${sep}${params.toString()}`);
       const invoiceData = await invoiceRes.json();
-      if (!invoiceData.pr) throw new Error('Serveris negrąžino sąskaitos (invoice)');
+      if (!invoiceData.pr) throw new Error('Failed to generate Lightning invoice');
       return invoiceData.pr;
     }
 
@@ -673,7 +648,7 @@
             tipEl.innerText = `${updated} ⚡`;
           }
         }
-      } catch (e) { console.warn('Nepavyko apdoroti zap receipt', e); }
+      } catch (e) { console.warn('Zap receipt parse error', e); }
     }
 
     function updateBalanceDisplay() {
@@ -683,12 +658,12 @@
     async function openZapSheet(postId, authorPubkey) {
       currentZapTarget = { postId, authorPubkey };
       const body = document.getElementById('zap-body');
-      body.innerHTML = `<p class="text-zinc-400 text-sm">${t('zap_resolving')}</p>`;
+      body.innerHTML = `<p class="text-zinc-400 text-sm">Resolving recipient Lightning address...</p>`;
       showModal('zap-modal');
 
       const lud16 = await fetchProfile(authorPubkey);
       if (!lud16) {
-        body.innerHTML = `<p class="text-zinc-400 text-sm">${t('zap_no_lud16')}</p>`;
+        body.innerHTML = `<p class="text-zinc-400 text-sm">Author hasn't added a Lightning address yet.</p>`;
         return;
       }
       currentZapTarget.lud16 = lud16;
@@ -702,11 +677,11 @@
       const amounts = [21, 100, 500, 1000];
       body.innerHTML = `
         <div class="grid grid-cols-4 gap-2 w-full">
-          ${amounts.map(a => `<button onclick="selectZapAmount(${a})" class="zap-amount-btn py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm font-bold text-yellow-300 active:scale-95">${a}</button>`).join('')}
+          ${amounts.map(a => `<button onclick="selectZapAmount(${a})" class="zap-amount-btn py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm font-bold text-yellow-300 active:scale-95 transition">${a}</button>`).join('')}
         </div>
-        <input id="zap-custom-amount" type="number" min="1" placeholder="Custom sats" class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white mt-2 focus:outline-none focus:border-orange-500" />
+        <input id="zap-custom-amount" type="number" min="1" placeholder="Custom sats..." class="w-full px-4 py-3 rounded-lg bg-zinc-900 border border-white/10 text-sm text-white mt-2 focus:outline-none focus:border-orange-500 font-sans" />
         <button onclick="confirmZap()" class="w-full py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black mt-2 flex items-center justify-center gap-2 active:scale-95 transition">
-          <i data-lucide="zap" class="w-5 h-5"></i><span>${t('zap_send')}</span>
+          <i data-lucide="zap" class="w-5 h-5"></i><span>Send Zap</span>
         </button>
       `;
       if (window.lucide) lucide.createIcons();
@@ -723,7 +698,7 @@
       const customVal = customInput ? parseInt(customInput.value || '', 10) : NaN;
       const amount = customVal > 0 ? customVal : selectedZapAmount;
       const body = document.getElementById('zap-body');
-      body.innerHTML = `<p class="text-zinc-400 text-sm">${t('zap_invoice_loading')}</p>`;
+      body.innerHTML = `<p class="text-zinc-400 text-sm">Generating Lightning invoice...</p>`;
 
       try {
         const eventId = currentZapTarget.postId.startsWith('nostr-') ? currentZapTarget.postId.slice(7) : null;
@@ -731,8 +706,8 @@
         const invoice = await requestInvoice(currentZapTarget.lud16, amount, zapReq);
         renderInvoice(invoice);
       } catch (e) {
-        console.warn('Zap klaida:', e);
-        body.innerHTML = `<p class="text-red-400 text-sm">${t('zap_error')}</p>`;
+        console.warn('Zap request error:', e);
+        body.innerHTML = `<p class="text-red-400 text-sm">Failed to create Zap request (LNURL server CORS error or offline).</p>`;
       }
     }
 
@@ -740,16 +715,16 @@
       const body = document.getElementById('zap-body');
       body.innerHTML = `
         <div class="bg-white p-3 rounded-xl flex items-center justify-center"><div id="zap-qr"></div></div>
-        <p class="text-xs text-zinc-500">${t('zap_or_scan')}</p>
-        <button id="copy-invoice-btn" class="text-xs text-orange-400 underline">${t('zap_copy')}</button>
-        <button id="webln-pay-btn" class="w-full py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black mt-2 active:scale-95 transition">${t('zap_pay_with_ext')}</button>
+        <p class="text-xs text-zinc-500">Scan QR or copy Lightning invoice</p>
+        <button id="copy-invoice-btn" class="text-xs text-orange-400 underline">Copy Invoice</button>
+        <button id="webln-pay-btn" class="w-full py-3.5 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400 font-bold text-black mt-2 active:scale-95 transition">Pay with Wallet Extension</button>
       `;
       if (window.QRCode) {
         new QRCode(document.getElementById('zap-qr'), { text: 'lightning:' + invoice, width: 180, height: 180 });
       }
       document.getElementById('copy-invoice-btn').onclick = () => {
         navigator.clipboard?.writeText(invoice).catch(() => {});
-        toast(t('zap_copy'));
+        toast('Invoice copied');
       };
       document.getElementById('webln-pay-btn').onclick = () => payWithWebLN(invoice, false);
       if (window.webln) payWithWebLN(invoice, true);
@@ -757,7 +732,7 @@
 
     async function payWithWebLN(invoice, silent) {
       if (!window.webln) {
-        if (!silent) alert('WebLN piniginė (pvz. Alby) nerasta.');
+        if (!silent) alert('WebLN wallet extension (e.g., Alby) not detected.');
         return;
       }
       try {
@@ -765,14 +740,14 @@
         await window.webln.sendPayment(invoice);
         if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
         closeZapSheet();
-      } catch (e) { console.warn('WebLN mokėjimas atšauktas', e); }
+      } catch (e) { console.warn('WebLN payment canceled or failed', e); }
     }
 
-    // PINIGINĖS MODALAS
+    // WALLET MODAL
     async function openWalletModal() {
       document.getElementById('wallet-npub').innerText = getNpub();
       document.getElementById('lud16-input').value = localStorage.getItem('hype_lud16') || '';
-      document.getElementById('ext-status').innerText = usingExtension ? t('using_extension') : '';
+      document.getElementById('ext-status').innerText = usingExtension ? 'Connected via Nostr extension (NIP-07)' : 'Using local keypair';
       showModal('wallet-modal');
     }
     function closeWalletModal() { hideModal('wallet-modal'); }
@@ -783,11 +758,11 @@
       localStorage.setItem('hype_lud16', val);
       publishProfileMetadata(val);
       const status = document.getElementById('lud16-status');
-      status.innerText = t('lud16_saved');
-      setTimeout(() => { status.innerText = ''; }, 2000);
+      status.innerText = 'Saved & published to Nostr relays';
+      setTimeout(() => { status.innerText = ''; }, 2500);
     }
 
-    // UI HELPERIAI
+    // UI HELPERS
     function showModal(id) { const el = document.getElementById(id); el.classList.remove('hidden'); el.classList.add('flex'); }
     function hideModal(id) { const el = document.getElementById(id); el.classList.add('hidden'); el.classList.remove('flex'); }
 
@@ -796,7 +771,7 @@
       if (!el) {
         el = document.createElement('div');
         el.id = 'toast';
-        el.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-black/80 text-white text-xs px-4 py-2 rounded-full z-[200] pointer-events-none transition-opacity duration-300';
+        el.className = 'fixed bottom-24 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-xs px-4 py-2 rounded-full z-[200] pointer-events-none transition-opacity duration-300 font-mono';
         document.body.appendChild(el);
       }
       el.innerText = msg;
@@ -805,12 +780,11 @@
       el._t = setTimeout(() => { el.style.opacity = '0'; }, 2000);
     }
 
-    // STARTAS
+    // BOOTSTRAP
     window.addEventListener('DOMContentLoaded', async () => {
       lucide.createIcons();
 
       await initIdentity();
-      applyAutoLanguage();
       userGeohash = await tryGetAutoLocation();
       openRelayConnections();
 
